@@ -1,0 +1,786 @@
+.memberAvatar,
+.emptyAvatar {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 600;
+}
+
+.memberAvatar {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+.emptyAvatar {
+  width: 54px;
+  height: 54px;
+  margin-bottom: 4px;
+  font-size: 19px;
+}
+
+.leaderCrown {
+  flex: none;
+  display: inline-block;
+  vertical-align: -2px;
+}
+
+.conversationColumn {
+  min-width: 300px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-alias-shadow-l1);
+}
+
+.conversationColumnExpanded {
+  position: fixed;
+  inset: clamp(22px, 5vh, 56px) clamp(22px, 6vw, 96px);
+  z-index: 91;
+  min-width: 0;
+  border-radius: 16px;
+  box-shadow: var(--dsw-alias-shadow-l2, var(--dsw-alias-shadow-l1));
+  transform-origin: center;
+  animation: conversationDialogEnter 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes conversationDialogEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.conversationColumnExpanded .columnHeader {
+  min-height: 64px;
+  padding-inline: 18px;
+  cursor: default;
+}
+
+.conversationColumnExpanded .timeline {
+  padding: 24px 28px 20px;
+}
+
+.conversationColumnExpanded .messageNode,
+.conversationColumnExpanded .teamMessageCard {
+  max-width: min(76%, 820px);
+}
+
+.conversationColumnExpanded .teamMessageCard {
+  width: min(76%, 820px);
+}
+
+.conversationColumnExpanded .toolCard {
+  width: min(76%, 820px);
+  align-self: flex-start;
+}
+
+.columnHeader {
+  flex: none;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 13px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: zoom-in;
+}
+
+.columnHeaderActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.columnExpandClose,
+.columnOpenSession {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.columnExpandClose:hover,
+.columnOpenSession:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.columnIdentity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.columnIdentity > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.columnIdentity strong,
+.columnIdentity span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.columnIdentity strong {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 19px;
+  font-weight: 600;
+}
+
+.columnIdentity div > span {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.columnIdentity .columnModelMeta {
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.columnModelName {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.columnIdentity .reasoningModeBadge {
+  flex: none;
+  max-width: 128px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.columnStatus {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.timeline {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding: 16px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* The Harness centers its transcript at one reading measure; a member column
+   follows it, so an expanded column reads like the native conversation. */
+.timelineInner {
+  flex: 1 0 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: var(--dsh-chat-content-width, 748px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.columnEmpty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 28px 18px;
+  color: var(--dsw-alias-label-secondary);
+  text-align: center;
+}
+
+.columnEmpty strong {
+  font-size: 15px;
+}
+
+.columnEmpty > span:last-child {
+  max-width: 260px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 19px;
+}
+
+/* Flat transcript blocks at the Harness's own content type scale. Its own
+   messages go right in the bubble; an answer is plain prose. */
+.messageNode {
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+}
+
+.userMessage {
+  align-self: flex-end;
+  max-width: min(calc(var(--dsh-chat-content-width, 748px) * 0.702), 82%);
+  padding: 10px 16px;
+  border-radius: 22px;
+  background: var(--dsw-specific-bubble, var(--dsw-alias-bg-layer-3));
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(22px + var(--dsh-content-font-delta, 0px));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.userText {
+  margin: 0;
+}
+
+.assistantMessage {
+  align-self: flex-start;
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+.teamMessageCard {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: min(88%, 560px);
+  align-self: flex-start;
+  overflow: hidden;
+  padding: 9px 11px 10px 13px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.teamMessageCard::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--team-message-accent, var(--dsw-alias-state-business-primary));
+  content: '';
+}
+
+.teamMessageHeader,
+.teamMessageIdentity {
+  display: flex;
+  align-items: center;
+}
+
+.teamMessageHeader {
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.teamMessageIdentity {
+  min-width: 0;
+  gap: 6px;
+  font: var(--dsw-font-xxxs-11);
+}
+
+.teamMessageIdentity strong {
+  flex: none;
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xxxs-strong-11);
+}
+
+.teamMessageIdentity span {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.teamMessageMemberId {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-markdown-code-block-small);
+}
+
+.teamMessageType {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--team-message-tag-bg, var(--dsw-alias-bg-module-platform));
+  color: var(--team-message-accent, var(--dsw-alias-label-secondary));
+  font: var(--dsw-font-xxxs-11);
+}
+
+.teamMessageText {
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+.teamMessageInstruction {
+  --team-message-accent: var(--dsw-alias-brand-primary);
+  --team-message-tag-bg: var(--dsw-alias-interactive-bg-active);
+}
+
+.teamMessageProgress {
+  --team-message-accent: var(--dsw-alias-state-business-primary);
+  --team-message-tag-bg: var(--dsw-alias-state-business-tertiary, var(--dsw-alias-bg-module-platform));
+}
+
+.teamMessageResult {
+  --team-message-accent: var(--dsw-alias-state-success-primary);
+  --team-message-tag-bg: var(--dsw-alias-state-success-tertiary);
+}
+
+.teamMessageQuestion {
+  --team-message-accent: var(--dsw-alias-state-warn-label);
+  --team-message-tag-bg: var(--dsw-alias-state-warn-tertiary);
+}
+
+.teamMessageWarning {
+  --team-message-accent: var(--dsw-alias-state-error-primary);
+  --team-message-tag-bg: var(--dsw-alias-state-error-secondary);
+}
+
+.teamMessageSystem {
+  --team-message-accent: var(--dsw-alias-label-tertiary);
+  --team-message-tag-bg: var(--dsw-alias-bg-module-platform);
+}
+
+.messageText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The Think row, geometry copied from the Harness's own ReasoningRow. */
+.reasoningBlock {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 8px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.reasoningBlock:not(.reasoningBlockOpen) {
+  contain: size layout;
+  height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+.reasoningSep {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+  border-radius: 1px;
+  background: var(--dsw-alias-label-caption);
+}
+
+.reasoningSummary {
+  flex: auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reasoningTime {
+  flex: none;
+  margin-left: 6px;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  font-variant-numeric: tabular-nums;
+}
+
+.reasoningText {
+  padding: 4px 0 4px calc(22px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.streamingMark {
+  display: inline-block;
+  margin-top: 5px;
+  color: var(--dsw-alias-brand-primary);
+  font: var(--dsw-font-xxxs-11);
+}
+
+/* A Tool call is a flat row plus the Harness's own IN/OUT card. */
+.toolCard {
+  display: flex;
+  flex-direction: column;
+}
+
+.toolCardRow {
+  border-radius: 6px;
+}
+
+.toolCardTitle {
+  font-weight: 400;
+}
+
+.toolCardSep {
+  flex: none;
+  width: 2px;
+  height: 2px;
+  margin: 0 8px;
+  border-radius: 1px;
+  background: var(--dsw-alias-label-caption);
+}
+
+.toolCardSummary {
+  flex: auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolStatus {
+  flex: none;
+  margin-left: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+.toolCardBody {
+  display: flex;
+  flex-direction: column;
+  margin: 4px 0 4px 4px;
+  border: 0.5px solid var(--dsw-alias-border-l1);
+  border-radius: 12px;
+  background: var(--dsw-alias-markdown-code-block, var(--dsw-alias-bg-layer-2));
+  font: var(--dsw-font-markdown-code-block-small);
+}
+
+.toolCardSection {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: baseline;
+  column-gap: 14px;
+  max-height: 150px;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.toolCardLabel {
+  align-self: start;
+  position: sticky;
+  top: 0;
+  color: var(--dsw-alias-label-caption);
+}
+
+.toolCardText {
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.toolCardText[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.toolCardDivider {
+  flex: none;
+  height: 0.5px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.noticeNode {
+  align-self: center;
+  width: 100%;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  text-align: center;
+}
+
+.noticeError {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.interactionCard {
+  width: min(94%, 680px);
+  box-sizing: border-box;
+  align-self: center;
+  padding: 13px;
+  border: 1px solid var(--dsw-alias-state-warn-label);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--dsw-alias-shadow-l1);
+}
+
+.approvalCard {
+  border-color: var(--dsw-alias-state-warn-label);
+}
+
+.questionCard {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.interactionHeader,
+.interactionActions {
+  display: flex;
+  align-items: center;
+}
+
+.interactionHeader {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.interactionHeader strong {
+  font: var(--dsw-font-xs-strong-13);
+}
+
+.interactionHeader span {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xxxs-11);
+}
+
+.approvalToolName {
+  display: inline-block;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-module-platform);
+  font: var(--dsw-font-markdown-code-block-small);
+}
+
+.interactionDescription {
+  margin: 9px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+  overflow-wrap: anywhere;
+}
+
+.questionList {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.questionFieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.questionFieldset legend {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+}
+
+.questionFieldset legend > span {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xxxs-11);
+}
+
+.questionFieldset legend > strong {
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xxs-strong-12);
+}
+
+.questionDetail {
+  max-height: 260px;
+  margin-top: 8px;
+  overflow: auto;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+}
+
+.questionOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.questionOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.questionOption:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.questionOption input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--dsw-alias-state-business-primary);
+}
+
+.questionOption > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.questionOption strong {
+  font: var(--dsw-font-xxs-strong-12);
+}
+
+.questionOption small {
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-xxxs-11);
+}
+
+.questionCustomInput {
+  width: 100%;
+  min-height: 52px;
+  max-height: 120px;
+  box-sizing: border-box;
+  margin-top: 8px;
+  resize: vertical;
+  padding: 8px 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-s-14);
+}
+
+.questionCustomInput:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.interactionActions {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.interactionPrimaryButton,
+.interactionSecondaryButton {
+  min-height: 30px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font: var(--dsw-font-xxs-strong-12);
+  cursor: pointer;
+}
+
+.interactionPrimaryButton {
+  border: 0;
+  background: var(--dsw-alias-button-info-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.interactionPrimaryButton:hover:not(:disabled) {
+  background: var(--dsw-alias-button-info-hover);
+}
+
+.interactionSecondaryButton {
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.interactionSecondaryButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.interactionPrimaryButton:disabled,
+.interactionSecondaryButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.interactionError {
+  display: block;
+  margin-top: 8px;
+  color: var(--dsw-alias-state-error-primary);
+  font: var(--dsw-font-xxxs-11);
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  .conversationColumnExpanded {
+    animation: none;
+  }
+}
+
+/* The way back into a member Session's history: one page per press, the same
+   affordance the Harness's own transcript shows above its oldest message. */
+.timelineOlder {
+  flex: none;
+  display: flex;
+  justify-content: center;
+}
+
+.timelineOlder button {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 14px;
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.timelineOlder button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

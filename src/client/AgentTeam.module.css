@@ -1,0 +1,3453 @@
+.floatingTeamLauncher:focus-visible,
+.linkDanger:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+.floatingTeamLauncher {
+  position: fixed;
+  left: 16px;
+  top: 62%;
+  z-index: 30;
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 21px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-alias-shadow-l1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  transition:
+    width 180ms var(--ds-ease-in-out),
+    background-color 150ms var(--ds-ease-in-out),
+    box-shadow 150ms var(--ds-ease-in-out);
+}
+
+.floatingTeamLauncher:hover:not(.floatingTeamLauncherSettled),
+.floatingTeamLauncher:focus-visible:not(.floatingTeamLauncherSettled),
+.floatingTeamLauncherDragging {
+  width: 90px;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.floatingTeamLauncher.floatingTeamLauncherDragging {
+  cursor: grabbing;
+}
+
+.floatingTeamLauncher.floatingTeamLauncherSettled {
+  width: 42px;
+}
+
+.floatingTeamLauncherIcon {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.floatingTeamLauncherState {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--dsw-alias-bg-layer-1);
+  border-radius: 50%;
+  background: var(--dsw-alias-state-success-primary);
+  box-sizing: content-box;
+}
+
+.floatingTeamLauncher:hover .floatingTeamLauncherState,
+.floatingTeamLauncher:focus-visible .floatingTeamLauncherState,
+.floatingTeamLauncherDragging .floatingTeamLauncherState {
+  border-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.floatingTeamLauncher.floatingTeamLauncherSettled .floatingTeamLauncherState {
+  border-color: var(--dsw-alias-bg-layer-1);
+}
+
+.floatingTeamLauncherLabel {
+  flex: none;
+  opacity: 0;
+  transform: translateX(-3px);
+  transition:
+    opacity 120ms var(--ds-ease-in-out),
+    transform 180ms var(--ds-ease-in-out);
+}
+
+.floatingTeamLauncher:hover:not(.floatingTeamLauncherSettled) .floatingTeamLauncherLabel,
+.floatingTeamLauncher:focus-visible:not(.floatingTeamLauncherSettled) .floatingTeamLauncherLabel,
+.floatingTeamLauncherDragging .floatingTeamLauncherLabel {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.floatingTeamLauncher.floatingTeamLauncherSettled .floatingTeamLauncherLabel {
+  opacity: 0;
+  transform: translateX(-3px);
+}
+
+.floatingTeamLauncher.floatingTeamLauncherDragging {
+  width: 90px;
+}
+
+.floatingTeamLauncher.floatingTeamLauncherDragging .floatingTeamLauncherState {
+  border-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.floatingTeamLauncher.floatingTeamLauncherDragging .floatingTeamLauncherLabel {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floatingTeamLauncher,
+  .floatingTeamLauncherLabel {
+    transition: none;
+  }
+}
+
+.settingsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 100%;
+}
+
+.settingsHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.settingsTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 500;
+}
+
+.settingsDescription {
+  margin: 4px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.settingsSection > .error {
+  margin: 0;
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+/* Assistant template card, shared by the settings and dialog surfaces. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.card:hover {
+  border-color: var(--dsw-alias-border-l3);
+}
+
+/* ── Team list: one row per team, opened by clicking it ─────────────────── */
+
+.teamList {
+  display: flex;
+  flex-direction: column;
+}
+
+.teamListHeader,
+.teamListRow {
+  display: grid;
+  grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 0.7fr);
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+}
+
+.teamListHeader {
+  height: 34px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.teamListRow {
+  height: 58px;
+  border: 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.teamListRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.teamListIdentity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.teamListIcon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.teamListCopy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.teamListName,
+.teamListPersonName {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.teamListName {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+
+.teamListPerson {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.teamListRoster {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.teamListAvatar {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.teamListMuted {
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+}
+
+.teamListTime {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+/* ── Team page: summary card beside the roster ──────────────────────────── */
+
+.teamDetailPage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1180px;
+}
+
+.teamDetailCompact {
+  display: block;
+}
+
+.teamDetailBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.teamBreadcrumb {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+}
+
+.teamBreadcrumbLink {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.teamBreadcrumbLink:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.teamBreadcrumbSeparator {
+  color: var(--dsw-alias-label-caption);
+}
+
+.teamBreadcrumbCurrent {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+.teamDetailBarActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.teamDetailBody {
+  display: grid;
+  grid-template-columns: 268px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+@media (max-width: 900px) {
+  .teamDetailBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.teamSummaryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.teamSummaryIcon {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.teamSummaryName,
+.teamSummarySub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.teamSummaryName {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.teamSummarySub {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.teamSummaryDivider {
+  height: 1px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.teamSummaryLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.teamSummaryRows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.teamSummaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.teamSummaryRow dt {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.teamSummaryRow dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-primary);
+}
+
+.teamMemberPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.teamMemberPanelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.teamMemberPanelTitle {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.teamMemberPanelHint {
+  margin: 2px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.teamMemberPanelActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.teamMemberList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.teamMemberRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.teamMemberAvatar {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.teamMemberInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.teamMemberTitle {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.teamMemberName {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.teamMemberStatus {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.teamMemberMeta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.teamMemberRowActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/*
+ * The team page is a main panel of the frame: it fills the centre column beside
+ * the Harness sidebar instead of covering the frame, so the sidebar keeps
+ * rendering itself — its brand row, its Workspace groups and its own session
+ * rows.
+ */
+.panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.panelBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 24px 24px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* The page's own way back: one step up, ending at the Conversation. */
+.panelBack {
+  flex: none;
+  box-sizing: border-box;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: -8px;
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.panelBack:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.headerActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Header controls, drawn as the frame's own outlined control. */
+.panelControl {
+  box-sizing: border-box;
+  max-width: 240px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.panelControl:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.panelControlLabel {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.shellHeader {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 70px;
+  box-sizing: border-box;
+  padding: 14px 20px 13px 22px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.headerCopy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shellTitleRow {
+  flex: none;
+  max-width: 50%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.title {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 19px;
+  line-height: 27px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.subtitle {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.section {
+  min-height: 100%;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.sectionDescription {
+  margin: 3px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+
+
+/* One team's own page: overview of its members and lifecycle actions. */
+
+
+
+
+.assistantCardContent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: -8px -8px 2px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.assistantCardContent:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.assistantCardContent:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.assistantBuilderCard {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-state-business-tertiary, var(--dsw-alias-border-l2));
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-alias-shadow-l1);
+}
+
+.assistantBuilderAvatar {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-brand-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.assistantBuilderCopy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.assistantBuilderCopy strong {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.assistantBuilderCopy p {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.assistantBuilderEyebrow {
+  color: var(--dsw-alias-brand-primary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+
+
+
+
+
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.sectionHeaderActions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.muted {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+}
+
+.description {
+  margin: 2px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.animatedDialog {
+  transform-origin: center;
+  animation: agentTeamDialogEnter 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.animatedDialogClosing {
+  pointer-events: none;
+  animation: agentTeamDialogExit 140ms ease-in both;
+}
+
+@keyframes agentTeamDialogEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes agentTeamDialogExit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+}
+
+.assistantDialog {
+  width: min(880px, calc(100vw - 48px));
+  max-height: min(840px, calc(100vh - 32px));
+}
+
+.assistantBuilderDialog {
+  width: min(1360px, calc(100vw - 16px));
+  height: min(920px, calc(100vh - 16px));
+  gap: 0;
+  padding-bottom: 0;
+}
+
+.assistantBuilderDialogContent {
+  flex: 1;
+  min-height: 0;
+}
+
+.assistantBuilderDialogContent > div:last-child {
+  height: 100%;
+  min-height: 0;
+  margin-top: 16px;
+  padding: 0;
+}
+
+.assistantManagementDialog {
+  width: min(1240px, calc(100vw - 32px));
+  height: min(880px, calc(100vh - 32px));
+  gap: 0;
+  padding-bottom: 0;
+}
+
+.assistantManagementDialogContent {
+  flex: 1;
+  min-height: 0;
+}
+
+.assistantManagementDialogContent > div:last-child {
+  flex: 1;
+  min-height: 0;
+  margin-top: 16px;
+  padding: 0;
+}
+
+.assistantManagementBody {
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 0 24px 24px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.assistantBuilderArchiveDialog {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.assistantDeleteDialog {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.teamDissolveDialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.memberRemoveDialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.memberRemoveConfirm {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 4px 0;
+}
+
+.memberRemoveIcon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.memberRemoveConfirm strong {
+  display: block;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 21px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberRemoveConfirm p {
+  margin: 4px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.memberRemoveConfirm > .inlineError {
+  grid-column: 1 / -1;
+}
+
+.teamDissolveConfirm {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 4px 0;
+}
+
+.teamDissolveIcon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.teamDissolveConfirm strong {
+  display: block;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 21px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.teamDissolveConfirm p {
+  margin: 4px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.teamDissolveConfirm > .inlineError {
+  grid-column: 1 / -1;
+}
+
+.assistantDeleteConfirm {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 4px 0;
+}
+
+.assistantDeleteIcon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.assistantDeleteConfirm strong {
+  display: block;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 21px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistantDeleteConfirm p {
+  margin: 4px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.assistantDeleteConfirm > .inlineError {
+  grid-column: 1 / -1;
+}
+
+
+.assistantBuilderArchiveConfirm {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 4px 0;
+}
+
+.assistantBuilderArchiveIcon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.assistantBuilderArchiveConfirm strong {
+  display: block;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 21px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistantBuilderArchiveConfirm p {
+  margin: 4px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.assistantBuilderArchiveConfirm > .inlineError {
+  grid-column: 1 / -1;
+}
+
+.assistantBuilderConversation {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.assistantBuilderHistory {
+  width: 210px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.assistantBuilderNewConversation {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.assistantBuilderNewConversation:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.assistantBuilderNewConversation:disabled,
+.assistantBuilderHistoryItem:disabled,
+.assistantBuilderHistoryArchive:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.assistantBuilderHistoryList {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.assistantBuilderHistoryRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.assistantBuilderHistoryItem {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.assistantBuilderHistoryArchive {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.assistantBuilderHistoryArchive:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.assistantBuilderHistoryArchive:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.assistantBuilderHistoryItem:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.assistantBuilderHistoryItemActive {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.assistantBuilderHistoryItem strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistantBuilderHistoryItem > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.assistantBuilderHistoryItem em {
+  flex: none;
+  font-style: normal;
+}
+
+.assistantBuilderHistoryEmpty {
+  padding: 16px 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  text-align: center;
+}
+
+.assistantBuilderMain {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.assistantBuilderRuntime {
+  flex: none;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
+.assistantBuilderRuntimeState,
+.assistantBuilderModelControls {
+  display: flex;
+  align-items: center;
+}
+
+.assistantBuilderRuntimeState {
+  flex: none;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.assistantBuilderModelControls {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.assistantBuilderModelSelect {
+  flex: 0 1 320px;
+  min-width: 0;
+  max-width: 320px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.assistantBuilderModelSelect:focus-visible {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.assistantBuilderModelSelect:disabled {
+  opacity: 0.6;
+}
+
+.assistantBuilderTimeline {
+  padding: 20px 20px 16px;
+}
+
+.assistantBuilderComposer {
+  margin: 0 16px 16px;
+}
+
+.teamCreateDialog {
+  width: min(1120px, calc(100vw - 48px));
+  height: min(780px, calc(100vh - 48px));
+  gap: 0;
+  padding-bottom: 0;
+}
+
+.teamCreateContent {
+  flex: 1;
+  min-height: 0;
+}
+
+.teamCreateContent > div:last-child {
+  flex: 1;
+  min-height: 0;
+  margin-top: 16px;
+  padding: 0;
+}
+
+.teamBuilderForm {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.teamBuilderGrid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(380px, 1.05fr);
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.assistantPicker,
+.selectedMembers {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px;
+}
+
+.assistantPicker {
+  border-right: 1px solid var(--dsw-alias-border-l2);
+}
+
+.builderSectionHeading {
+  flex: none;
+  min-height: 42px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.builderSectionHeading p {
+  margin: 3px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 400;
+}
+
+.builderSearch {
+  flex: none;
+  width: 100%;
+  height: 38px;
+  margin: 10px 0 14px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  outline: none;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.builderSearch:focus {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.builderSearch::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.assistantPickList,
+.selectedMemberList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.assistantPickList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.assistantPickList .empty {
+  min-height: 160px;
+}
+
+.assistantPickRow {
+  flex: none;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 12px;
+}
+
+.assistantPickRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.assistantPickAvatar {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.assistantPickCopy,
+.selectedMemberCopy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.assistantPickCopy strong,
+.assistantPickCopy span,
+.selectedMemberCopy strong,
+.selectedMemberCopy span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.assistantPickCopy strong,
+.selectedMemberCopy strong {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.assistantPickCopy span,
+.selectedMemberCopy span {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.assistantAddButton,
+.removeDraftMember {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.assistantAddButton {
+  width: 30px;
+  height: 30px;
+}
+
+.removeDraftMember {
+  width: 26px;
+  height: 26px;
+}
+
+.assistantAddButton:hover,
+.removeDraftMember:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.leaderLegend,
+.leaderBadge {
+  flex: none;
+  border-radius: 10px;
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.leaderLegend {
+  padding: 1px 8px;
+}
+
+.leaderBadge {
+  padding: 2px 8px;
+}
+
+.selectedMemberList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.selectedMemberRow {
+  flex: none;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.selectedLeader {
+  border-color: var(--dsw-alias-state-warn-secondary);
+}
+
+.setLeaderButton {
+  flex: none;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.setLeaderButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.memberEmpty {
+  flex: 1;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 24px;
+  color: var(--dsw-alias-label-secondary);
+  text-align: center;
+}
+
+.memberEmpty strong {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.memberEmpty span {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.teamFields {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px 14px;
+  padding-top: 16px;
+}
+
+.teamFields .checkboxRow {
+  grid-column: 1 / -1;
+}
+
+.teamBuilderActions {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 24px;
+}
+
+.cloneTeamDialog {
+  width: min(760px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 48px));
+}
+
+.cloneTeamDialogContent {
+  min-height: 0;
+}
+
+.cloneTeamForm {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+
+.cloneTeamMembers {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cloneTeamSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.cloneTeamSectionHeader span {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.cloneTeamMemberGrid {
+  max-height: 250px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.cloneTeamMember {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.cloneTeamLeader {
+  border-color: var(--dsw-alias-state-warn-secondary);
+}
+
+.cloneTeamAvatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.cloneTeamMemberCopy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cloneTeamMemberCopy strong,
+.cloneTeamMemberCopy span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cloneTeamMemberCopy strong {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 19px;
+}
+
+.cloneTeamMemberCopy span {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.cloneTeamRole {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.cloneTeamLeader .cloneTeamRole {
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.cloneTeamNotice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.cloneTeamActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modalScrollContent {
+  min-height: 0;
+  overflow: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.assistantForm .input {
+  font-size: 13px;
+  line-height: 19px;
+}
+
+.assistantForm select.input option {
+  font-size: 13px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.fullWidth {
+  grid-column: 1 / -1;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.label {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.hint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+}
+
+.input {
+  min-height: 36px;
+  padding: 7px 10px;
+}
+
+textarea.input {
+  resize: vertical;
+}
+
+.input:focus {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.skillPicker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 248px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.skillOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: pointer;
+}
+
+.skillOption input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.skillOptionText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.skillOptionText strong {
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.skillOptionText small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.empty {
+  min-height: 300px;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+}
+
+.emptyCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.emptyTitle {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.emptyHint {
+  max-width: 360px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.error,
+.inlineError {
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.error {
+  margin: 12px 24px 0;
+  padding: 9px 12px;
+}
+
+/* A failed first read states itself once, with the way to read again. */
+.errorRead {
+  margin: 12px 24px 0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inlineError {
+  padding: 7px 9px;
+}
+
+
+
+
+
+.taskList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 7px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.taskList {
+  border: 1px solid var(--dsw-alias-border-l2);
+}
+
+.taskTitle {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+.addMemberDialogHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.addMemberDialogHeader strong {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.addMemberDialogHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.addMemberDialogHeaderActions > span {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.addMemberMenuList {
+  min-height: 0;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  padding-right: 2px;
+  overflow-y: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.addMemberEmpty {
+  display: block;
+  padding: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.addMemberOption {
+  min-width: 0;
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.addMemberOption:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.addMemberOption:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.addMemberAvatar {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.addMemberCopy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.addMemberCopy strong,
+.addMemberCopy span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.addMemberCopy strong {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.addMemberCopy span {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.addMemberOptionAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.memberRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.linkDanger {
+  padding: 2px 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-state-error-primary);
+  cursor: pointer;
+}
+
+.linkDanger:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.contextResetPanel {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.contextResetCopy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.contextResetCopy strong {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.contextResetCopy span {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+
+
+.warning {
+  margin-top: 5px;
+  color: var(--dsw-alias-state-warn-label);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.workbenchContent {
+  overflow: hidden;
+  padding: 0;
+}
+
+.workbenchContent > .section {
+  height: 100%;
+}
+
+.workbench {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.workbenchMainPane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.memberTabs {
+  flex: none;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l1);
+}
+
+.memberTab {
+  flex: none;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.memberTabWrap {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+
+.memberTabWithActions {
+  padding-right: 12px;
+  transition: padding-right 140ms ease;
+}
+
+.memberTabWrap:hover .memberTabWithActions,
+.memberTabWrap:focus-within .memberTabWithActions {
+  padding-right: 38px;
+}
+
+.memberTabName {
+  min-width: 0;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberTabActions {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease;
+}
+
+.memberTabWrap:hover .memberTabActions,
+.memberTabWrap:focus-within .memberTabActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.memberTabRemoveAction {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.memberTabRemoveAction {
+  padding: 0;
+}
+
+.memberTabRemoveAction:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.memberTab:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.memberTabActive {
+  border-color: var(--dsw-alias-state-business-secondary, var(--dsw-alias-brand-primary));
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-alias-shadow-l1);
+}
+
+.memberAvatar,
+.emptyAvatar {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 600;
+}
+
+.memberAvatar {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+.emptyAvatar {
+  width: 54px;
+  height: 54px;
+  margin-bottom: 4px;
+  font-size: 19px;
+}
+
+.leaderCrown {
+  flex: none;
+  display: inline-block;
+  vertical-align: -2px;
+}
+
+
+
+
+.manageButtonWrap {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+}
+
+.manageButton {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.workbenchError {
+  flex: none;
+  padding: 7px 14px;
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+}
+
+.workbenchBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.conversationGrid {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--member-columns), minmax(300px, 1fr));
+  gap: 10px;
+  overflow-x: auto;
+  background: transparent;
+}
+
+.conversationFocusBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  padding: 0;
+  border: 0;
+  background: var(--dsw-alias-bg-layer-1);
+  cursor: zoom-out;
+  opacity: 0.82;
+  animation: conversationBackdropEnter 160ms ease-out both;
+}
+
+@keyframes conversationBackdropEnter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 0.82;
+  }
+}
+
+
+.managementDialog {
+  width: min(900px, calc(100vw - 48px));
+  max-height: min(820px, calc(100vh - 48px));
+}
+
+.addMemberDialog {
+  width: min(520px, calc(100vw - 48px));
+  max-height: min(680px, calc(100vh - 48px));
+}
+
+.addMemberDialogContent {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.managementDialogContent {
+  min-height: 0;
+}
+
+.managementDialogBody {
+  min-height: 0;
+  max-height: calc(100vh - 190px);
+  overflow-y: auto;
+  padding: 4px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+@media (max-width: 1440px) {
+  .workbenchBody,
+  .conversationGrid {
+    gap: 7px;
+  }
+
+  .workbenchBody {
+    padding: 7px;
+  }
+
+  .conversationGrid {
+    grid-template-columns: repeat(var(--member-columns), minmax(270px, 1fr));
+  }
+
+  .conversationColumn {
+    min-width: 270px;
+  }
+
+}
+
+@media (max-width: 760px) {
+  .conversationGrid {
+    grid-template-columns: repeat(var(--member-columns), minmax(calc(100vw - 206px), 1fr));
+    scroll-snap-type: x mandatory;
+  }
+
+  .conversationColumn {
+    scroll-snap-align: start;
+  }
+
+  .shellHeader {
+    padding: 16px;
+  }
+
+  .panelBody {
+    padding: 16px;
+  }
+
+  .formGrid,
+  .teamBuilderGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .skillPicker {
+    grid-template-columns: 1fr;
+  }
+
+  .teamCreateDialog {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+    border-radius: 16px;
+  }
+
+  .assistantDialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    border-radius: 16px;
+  }
+
+  .assistantBuilderDialog {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+    border-radius: 16px;
+  }
+
+  .assistantManagementDialog {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+    border-radius: 16px;
+  }
+
+  .assistantManagementBody {
+    padding-inline: 16px;
+  }
+
+  .assistantBuilderHistory {
+    width: 132px;
+    padding: 8px;
+  }
+
+  .assistantBuilderHistoryItem {
+    padding-inline: 8px;
+  }
+
+  .assistantBuilderHistoryItem time {
+    display: none;
+  }
+
+  .assistantBuilderCard {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .assistantBuilderCopy {
+    flex-basis: calc(100% - 56px);
+  }
+
+  .assistantBuilderCard > button {
+    margin-left: 56px;
+  }
+
+  .assistantBuilderRuntime {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .assistantBuilderModelControls {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .assistantBuilderModelSelect {
+    flex: 1;
+    max-width: none;
+  }
+
+  .managementDialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .cloneTeamDialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+
+  .teamCreateContent {
+    overflow-y: auto;
+  }
+
+  .teamCreateContent > div:last-child,
+  .teamBuilderForm {
+    flex: none;
+  }
+
+  .assistantPicker {
+    border-right: 0;
+    border-bottom: 1px solid var(--dsw-alias-border-l2);
+  }
+
+  .assistantPickList,
+  .selectedMemberList {
+    max-height: 280px;
+  }
+
+  .teamFields {
+    grid-template-columns: 1fr;
+  }
+
+  .cloneTeamMemberGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .teamFields .checkboxRow {
+    grid-column: auto;
+  }
+
+
+  .fullWidth {
+    grid-column: auto;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animatedDialog,
+  .animatedDialogClosing,
+  .conversationFocusBackdrop {
+    animation: none;
+  }
+}
+
+/* ── Sidebar foot entry (replaces the floating launcher) ─────────────────── */
+
+.sidebarAction {
+  box-sizing: border-box;
+  cursor: pointer;
+  width: calc(100% + 4px);
+  height: 42px;
+  color: var(--dsw-alias-label-primary);
+  background: 0 0;
+  border: none;
+  border-radius: 12px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin: 4px -2px;
+  padding: 0 10px 0 8px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  display: flex;
+  overflow: hidden;
+}
+
+.sidebarAction:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.sidebarActionRail {
+  border-radius: 50%;
+  justify-content: center;
+  gap: 0;
+  width: 36px;
+  height: 36px;
+  margin: 8px 0 10px;
+  padding: 0;
+}
+
+.sidebarActionIcon {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.sidebarActionLabel {
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sidebarActionDot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-success-primary);
+}
+
+/* Harness destructive-button pattern: an outline Button tinted by the error
+   colour (same as the sidebar's own delete action). */
+.dangerAction:not(:disabled) {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* ── Workbench view toggle ──────────────────────────────────────────────── */
+
+/* The workspace's primary switch: which surface (room or member columns) the
+   workbench shows. It leads the tab row and carries the primary fill, so it
+   reads before the member tabs beside it. */
+
+.viewToggle {
+  flex: none;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 11px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.viewToggleButton {
+  cursor: pointer;
+  border: none;
+  background: 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 6px 16px;
+  border-radius: 8px;
+}
+
+.viewToggleButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.viewToggleButtonActive,
+.viewToggleButtonActive:hover {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-weight: 600;
+}
+
+.memberTabsDivider {
+  flex: none;
+  width: 1px;
+  height: 24px;
+  background: var(--dsw-alias-border-l2);
+}
+
+/* ── Meeting room ──────────────────────────────────────────────────────── */
+
+.room {
+  flex: 1;
+  min-width: 0;
+  /* Without this the room refuses to shrink inside the column flex body, so
+     its timeline grows the page instead of scrolling inside it — the member
+     columns in the grid view stay bounded because the grid does the same. */
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roomTimeline {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.roomEmpty {
+  margin: auto;
+  max-width: var(--dsh-chat-content-width, 748px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+}
+
+/* ── Room feed ────────────────────────────────────────────────────────────
+   The room is chat: the reader's own turns sit on the right in the Harness's
+   bubble, a member's answer on the left in its own, under the member's avatar.
+   Process detail stays out — the name opens that member's column. */
+
+@keyframes roomStreamingPulse {
+  50% { opacity: 0.35; }
+}
+
+.roomDigestBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 2px 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.roomDigestHint {
+  margin-left: auto;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* A member waiting on the reader: the badge sits where the member is listed,
+   because a blocked member is otherwise indistinguishable from a busy one. */
+.memberTabAlert {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--dsw-alias-button-info-fill);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* The room carries the request itself, above the discussion it blocks. */
+.roomActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 2px 10px;
+}
+
+.roomActionsHint {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+
+.roomMentionMenu {
+  position: absolute;
+  left: 12px;
+  bottom: calc(100% - 6px);
+  z-index: 5;
+  min-width: 200px;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3, var(--dsw-alias-shadow-l1));
+}
+
+.roomMentionOption {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 8px;
+  background: 0 0;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.roomMentionOptionActive {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.roomMentionOption em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--dsw-alias-brand-primary);
+}
+
+/* Rule documents in the assistant editor. */
+.ruleDocuments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.ruleDocumentsToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ruleDocumentsImport {
+  flex: none;
+  padding: 5px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ruleDocumentsImport:hover:not(:disabled) {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.ruleDocumentsImport:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ruleDocument {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-2);
+  overflow: hidden;
+}
+
+.ruleDocumentMain {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.ruleDocumentMain input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.ruleDocumentActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 8px;
+}
+
+.ruleDocumentAction,
+.ruleDocumentDanger {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ruleDocumentAction {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.ruleDocumentAction:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.ruleDocumentDanger {
+  color: var(--dsw-alias-state-error-primary, #e5484d);
+}
+
+.ruleDocumentPreview {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow: auto;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-family-mono, monospace);
+  font-size: 11px;
+  line-height: 17px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---------------------------------------------------------------- 会议室聊天记录 */
+
+.roomFeed {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: var(--dsh-chat-content-width, 748px);
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+}
+
+/* One turn. The reader's own message goes right, everyone else stays left
+   behind that member's avatar. */
+.roomTurn {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.roomTurn[data-self='true'] {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.roomBubble {
+  max-width: min(calc(var(--dsh-chat-content-width, 748px) * 0.702), 82%);
+  padding: 10px 16px;
+  border-radius: 22px;
+  background: var(--dsw-specific-bubble, var(--dsw-alias-bg-layer-3));
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(22px + var(--dsh-content-font-delta, 0px));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.roomBubbleTime {
+  align-self: flex-end;
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* A member's avatar: a disc the size of a chat avatar, so a turn is recognised
+   by who said it before the name is read. */
+.roomAgentAvatar {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-overlay);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
+/* The name line and the bubble share one column. It takes the whole message
+   width the Harness gives a message — avatar included — so a member's answer
+   reads as wide as a message in any other conversation, while a short one still
+   shrinks to what it says, and the time stays on the bubble's right edge. */
+.roomAgentColumn {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.roomAgentHeader {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+.roomAgentName,
+.roomAgentNameButton {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  font-weight: 400;
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+}
+
+.roomAgentNameButton {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.roomAgentNameButton:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+}
+
+.roomAgentBadge {
+  flex: none;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.roomAgentTime {
+  flex: none;
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* The answer. A tail corner toward the avatar marks whose bubble it is. */
+.roomAgentBubble {
+  max-width: 100%;
+  padding: 10px 14px;
+  border-radius: 4px 16px 16px 16px;
+  background: var(--dsw-alias-bg-overlay);
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(22px + var(--dsh-content-font-delta, 0px));
+  overflow-wrap: anywhere;
+}
+
+.roomAgentBubble > :first-child {
+  margin-top: 0;
+}
+
+.roomAgentBubble > :last-child {
+  margin-bottom: 0;
+}
+
+
+/* The 团队 conversation view: header, team picker, and the workbench body. */
+.sessionView {
+  /* The shell seats a View in an auto-height area inside its own scroller, so a
+     content-sized root would let the whole pane grow with the history. The
+     shell publishes its conversation viewport and composer heights for exactly
+     this: claim that space and let the room and the member columns scroll
+     inside it, the way the built-in trajectory view does. */
+  flex: 1 1 0%;
+  min-height: 0;
+  max-height: calc(
+    var(--dsh-conversation-viewport-height, 100vh) - var(--dsh-composer-height, 0px)
+  );
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.sessionViewHeader {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.sessionViewCopy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sessionViewTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.sessionViewSubtitle {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.sessionViewBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sessionViewEmpty {
+  margin: 24px 16px;
+  padding: 28px;
+  display: grid;
+  gap: 6px;
+  place-items: center;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.sessionTeamList {
+  margin: 16px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.sessionTeamRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.sessionTeamRow + .sessionTeamRow {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.sessionTeamCopy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.sessionTeamCopy span {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+/* The room pages its merged history the way a member column pages its Session. */
+.roomOlder {
+  flex: none;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--dsh-chat-content-width, 748px);
+  margin: 0 auto;
+  display: flex;
+  justify-content: center;
+}
+
+.roomOlder button {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 14px;
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.roomOlder button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ── Member composer ──────────────────────────────────────────────────────
+   The stand-in for the Harness composer while one member is addressed. It
+   copies the Harness card: same max width, same surface, same round send
+   button, so the takeover reads as the composer it replaces. */
+
+.memberComposer {
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 var(--dsh-composer-side-clearance, 16px) 8px;
+}
+
+.memberComposerCard {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--dsh-composer-card-max-width, 748px);
+  display: flex;
+  flex-direction: column;
+  border: 0;
+  border-radius: 22px;
+  background: var(--dsw-specific-input-major);
+  box-shadow: var(--dsw-elevation-soft);
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
+.memberComposerAddressee {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+}
+
+.memberComposerAvatar {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-overlay);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.memberComposerInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  max-height: var(--dsh-composer-text-max-height, 240px);
+  padding: 4px 8px 0 14px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  caret-color: var(--dsw-alias-state-business-primary);
+  font-family: var(--dsw-font-family);
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.memberComposerInput::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.memberComposerBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 2px 8px 6px 14px;
+}
+
+.memberComposerHint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-caption);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memberComposerSend {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--dsw-alias-button-info-fill);
+  color: #fff;
+  cursor: pointer;
+}
+
+.memberComposerSend:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.memberComposerError {
+  padding: 0 14px 8px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+}
+
+/* The team switch in the composer tool row: as compact as the permission and
+   model controls beside it, because it is one more thing that belongs to this
+   Session rather than to the message. */
+.composerTeamTrigger {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 200px;
+  height: 26px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.composerTeamTrigger:hover:not(:disabled) {
+  background: var(--dsw-alias-bg-overlay);
+}
+
+.composerTeamTrigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.composerTeamLabel {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.composerTeamChevron {
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+}

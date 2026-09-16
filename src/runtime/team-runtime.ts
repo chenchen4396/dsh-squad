@@ -46,7 +46,7 @@ import {
 import { readStoredEvents } from './session-events.js'
 import { registerScopedSkillProvider } from './scoped-skills.js'
 import { TeamCommandHandler } from './team-command-handler.js'
-import { TeamInteractionBridge } from './team-interaction-bridge.js'
+import { LEADER_ANSWER_TIMEOUT_MS, TeamInteractionBridge } from './team-interaction-bridge.js'
 import { TeamMessageDispatcher } from './team-message-dispatcher.js'
 import {
   createSystemTeamMessage as systemTeamMessage,
@@ -67,6 +67,15 @@ interface OwnedAgent {
   handle: AgentHandle
   modelSelection: ModelSelectionRef
 }
+
+/**
+ * How often a member's hand-off to the Leader is retried before the request is
+ * refused. The Host is one event loop shared with every member's run, so a
+ * single failure is usually transient and worth another try.
+ */
+const HANDOFF_ATTEMPTS = 3
+/** Backoff between hand-off attempts, growing linearly per attempt. */
+const HANDOFF_RETRY_MS = 500
 
 /**
  * The team composition installed on a Harness Session's own Agent.
@@ -112,6 +121,7 @@ export class TeamRuntime {
     private readonly ctx: Context,
     private readonly config: Config,
     private readonly service: AgentTeamService,
+    private readonly handoff: { attempts?: number; retryMs?: number; answerWindowMs?: number } = {},
   ) {
     this.messages = new TeamMessageDispatcher(service, {
       resolveAgent: (teamId, conversationId, slotId) => (
@@ -134,8 +144,20 @@ export class TeamRuntime {
       acceptsSession: sessionId => this.owned.has(sessionId) || this.delegatesInteractions(sessionId),
       autoAnswer: sessionId => !this.owned.has(sessionId) && this.delegatesInteractions(sessionId),
       onChange: sessionId => {
-        this.publishOwnedConversation(sessionId)
-        this.handToLeader(sessionId)
+        // Handing the request to the Leader is what stops a member from waiting
+        // forever, so it goes first: publishing the conversation view is only
+        // cosmetic, and a failure there must never swallow the hand-off. Each
+        // step also contains its own failure for the same reason.
+        try {
+          this.handToLeader(sessionId)
+        } catch (error) {
+          ctx.logger.warn('agent-team: handing a member request to the Leader failed', error)
+        }
+        try {
+          this.publishOwnedConversation(sessionId)
+        } catch (error) {
+          ctx.logger.warn('agent-team: failed to publish interaction update', error)
+        }
       },
     })
     // A Session's own Agent is the Leader of whichever team that Session has
@@ -643,128 +665,39 @@ export class TeamRuntime {
     await this.interactions.respond(sessionId, interactionId, response)
   }
 
-  setMemberPermissionPreset(
-    teamId: string,
-    slotId: string,
-    permissionPresetId: string,
-  ): Promise<TeamAggregate> {
-    return this.exclusive(teamId, async () => {
-      const team = this.service.getTeam(teamId)
-      if (team.state !== 'active' && team.state !== 'error') {
-        throw new AgentTeamError(
-          'TEAM_NOT_ACTIVE',
-          `Cannot change member permission while team is '${team.state}'`,
-        )
-      }
-      const member = team.members[slotId]
-      if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-      // A member can be online in several conversations at once; a permission
-      // change applies to every Session that member currently owns.
-      const ownedSessions = this.ownedForSlot(teamId, slotId)
-      if (ownedSessions.length === 0) {
-        throw new AgentTeamError('TEAM_NOT_ACTIVE', `Member '${slotId}' is not online in any conversation`)
-      }
-      const previous = member.permissionPresetId
-      for (const owned of ownedSessions) {
-        this.ctx.permissionPresets.set(owned.handle.agent.session, permissionPresetId)
-      }
-      try {
-        return await this.service.updateRuntimeTeam(
-          teamId,
-          current => ({
-            ...current,
-            members: mapMembers(current, currentMember => currentMember.id === slotId
-              ? { ...currentMember, permissionPresetId }
-              : currentMember),
-          }),
-          'team.member_permission_changed',
-          `Member ${member.displayName} permission changed to ${permissionPresetId}`,
-        )
-      } catch (error) {
-        for (const owned of ownedSessions) {
-          this.ctx.permissionPresets.set(owned.handle.agent.session, previous)
-        }
-        throw error
-      }
-    })
-  }
+  /**
+   * Follow an edited assistant onto the members running as it.
+   *
+   * Members inherit their assistant live, but a member whose permission was
+   * edited directly no longer follows the template, and one that is already
+   * running holds the sandbox it was created with — so the template's settings
 
   /**
-   * Push an edited assistant's model onto the members already running as it.
+   * Follow an edited assistant onto the members running as it.
    *
-   * Members inherit the template live, but a running Agent keeps the selection
-   * it was given until something replaces it. Without this, editing a model in
-   * the assistant library would only take effect after the member restarted.
-   * `installModelSelection` applies the new pair from the next step and records
-   * a durable notice, so this is safe mid-conversation.
+   * Members inherit their assistant live, but a member whose permission was
+   * edited directly no longer follows the template, and one that is already
+   * running holds the sandbox it was created with — so the template's settings
+   * are pushed onto every running member that still follows it.
    *
-   * Only the model is pushed. Presets, Skills, and MCP Servers are bound when
-   * the Agent is created, so those wait for the next Session.
+   * @returns the teams whose members actually changed.
    */
-  refreshAssistantModel(assistant: AssistantTemplate): void {
+  refreshAssistantSettings(assistant: AssistantTemplate): void {
     for (const owned of this.owned.values()) {
       const team = this.service.getTeam(owned.teamId)
-      const member = Object.values(team.members).find(item => item.id === owned.slotId)
+      const member = team.members[owned.slotId]
       if (member === undefined || member.assistantId !== assistant.id) continue
+      this.ctx.permissionPresets.set(owned.handle.agent.session, assistant.permissionPresetId)
       owned.modelSelection.current = {
         provider: assistant.provider,
         model: assistant.model,
-        ...(member.reasoningEffort === undefined
+        ...(assistant.reasoningEffort === undefined
           ? {}
-          : { reasoningEffort: ReasoningEffortId(member.reasoningEffort) }),
+          : { reasoningEffort: ReasoningEffortId(assistant.reasoningEffort) }),
       }
     }
   }
 
-  setMemberReasoningEffort(
-    teamId: string,
-    slotId: string,
-    reasoningEffort: string | undefined,
-  ): Promise<TeamAggregate> {
-    return this.exclusive(teamId, async () => {
-      const team = this.service.getTeam(teamId)
-      if (team.state !== 'active' && team.state !== 'error') {
-        throw new AgentTeamError(
-          'TEAM_NOT_ACTIVE',
-          `Cannot change member reasoning while team is '${team.state}'`,
-        )
-      }
-      const member = team.members[slotId]
-      if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-      const ownedSessions = this.ownedForSlot(teamId, slotId)
-      if (ownedSessions.length === 0) {
-        throw new AgentTeamError('TEAM_NOT_ACTIVE', `Member '${slotId}' is not online in any conversation`)
-      }
-      const previous = ownedSessions.map(owned => ({
-        owned,
-        selection: owned.modelSelection.current,
-      }))
-      const assistant = this.service.assistantForMember(member)
-      for (const owned of ownedSessions) {
-        owned.modelSelection.current = {
-          provider: assistant.provider,
-          model: assistant.model,
-          ...(reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(reasoningEffort) }),
-        }
-      }
-      try {
-        return await this.service.updateRuntimeTeam(
-          teamId,
-          current => ({
-            ...current,
-            members: mapMembers(current, currentMember => currentMember.id === slotId
-              ? withReasoningEffort(currentMember, reasoningEffort)
-              : currentMember),
-          }),
-          'team.member_reasoning_changed',
-          `Member ${member.displayName} reasoning changed to ${reasoningEffort ?? 'model default'}`,
-        )
-      } catch (error) {
-        for (const entry of previous) entry.owned.modelSelection.current = entry.selection
-        throw error
-      }
-    })
-  }
 
   /**
    * Fail with an actionable message before creating an Agent whose model this
@@ -1107,6 +1040,10 @@ export class TeamRuntime {
    */
   async recoverTeams(): Promise<void> {
     await this.purgeLegacyTeams()
+    // Members follow their assistants completely, so a team bound before that
+    // rule is brought onto it now — its stored permission is what activation
+    // would otherwise sandbox the member with.
+    await this.service.followAssistants()
     const bound = this.service.listTeams().items.filter(team =>
       this.service.listConversations(team.id).items.some(item => item.sessionId !== undefined))
     await mapConcurrent(bound, this.config.runtimeConcurrency, async team => {
@@ -1192,6 +1129,11 @@ export class TeamRuntime {
    * `team_answer_member` — or decides the reader should hear about it and says
    * so in its own reply. Delivered once per request, so a member cannot flood
    * the Leader by asking repeatedly.
+   *
+   * A claimed request that never reaches the Leader hangs the member for good:
+   * nothing else settles it, and the member keeps reporting `running`. Delivery
+   * is therefore retried, and a request that still cannot be handed over is
+   * refused with a reason the member can act on rather than left waiting.
    */
   private handToLeader(sessionId: string): void {
     const pending = new Set(this.interactions.pendingIds())
@@ -1202,7 +1144,21 @@ export class TeamRuntime {
     if (owned === undefined) return
     const team = this.service.getTeam(owned.teamId)
     const member = team.members[owned.slotId]
-    if (member === undefined) return
+    const leader = this.resolveAgentIn(
+      this.service.getConversation(owned.teamId, owned.conversationId),
+      team.leaderSlotId,
+    )
+    if (member === undefined || leader === undefined) {
+      // Nothing can be handed over right now. Refusing would deny a request the
+      // Leader may well be able to grant once it exists again, so the request
+      // stays pending — but the reason is logged, because a member stuck behind
+      // an unanswerable request looks exactly like one that is still working.
+      this.ctx.logger.warn(
+        `agent-team: member '${owned.slotId}' is waiting, but `
+        + (member === undefined ? 'it is no longer a team member' : 'the Leader is not online'),
+      )
+      return
+    }
     const leaderMode = this.leaderSandboxMode(owned.teamId, owned.conversationId)
     // «替我审批»: every request of this conversation is the Leader's to answer,
     // so none of them may be left waiting for the reader to click.
@@ -1222,17 +1178,80 @@ export class TeamRuntime {
       } else if (beyondLeader) {
         this.interactions.markUserOnly(interaction.id)
       }
-      void this.commands.sendMemberMessage(
-        owned.teamId,
-        owned.conversationId,
-        member.id,
-        team.leaderSlotId,
-        memberRequestContent(member.displayName, interaction, { leaderMode, beyondLeader, delegated }),
-        interaction.kind === 'approval' ? 'warning' : 'question',
-      ).catch(error => {
-        this.handedRequests.delete(interaction.id)
-        this.ctx.logger.warn('agent-team: handing a member request to the Leader failed', error)
+      const content = memberRequestContent(member.displayName, interaction, { leaderMode, beyondLeader, delegated })
+      // The member's wait is bounded: a request nobody answers is refused
+      // rather than left to hang, which is the one outcome a member cannot
+      // recover from.
+      this.interactions.armDeadline(
+        interaction.id,
+        this.handoff.answerWindowMs ?? LEADER_ANSWER_TIMEOUT_MS,
+      )
+      void this.deliverHandoff({
+        sessionId,
+        teamId: owned.teamId,
+        conversationId: owned.conversationId,
+        senderSlotId: member.id,
+        recipientSlotId: team.leaderSlotId,
+        content,
+        type: interaction.kind === 'approval' ? 'warning' : 'question',
+        interactionId: interaction.id,
       })
+    }
+  }
+
+  /**
+   * Deliver one hand-off, retrying the transient failures a busy Host produces.
+   *
+   * A delivery that keeps failing means the Leader cannot be reached at all, and
+   * a member waiting on a request nobody will answer is worse than a refusal it
+   * can react to — so the request is settled rather than left pending.
+   */
+  private async deliverHandoff(handoff: {
+    sessionId: string
+    teamId: string
+    conversationId: string
+    senderSlotId: string
+    recipientSlotId: string
+    content: string
+    type: 'warning' | 'question'
+    interactionId: string
+  }): Promise<void> {
+    let lastError: unknown
+    const attempts = this.handoff.attempts ?? HANDOFF_ATTEMPTS
+    const retryMs = this.handoff.retryMs ?? HANDOFF_RETRY_MS
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        await this.commands.sendMemberMessage(
+          handoff.teamId,
+          handoff.conversationId,
+          handoff.senderSlotId,
+          handoff.recipientSlotId,
+          handoff.content,
+          handoff.type,
+        )
+        return
+      } catch (error) {
+        lastError = error
+        await new Promise(resolve => setTimeout(resolve, retryMs * (attempt + 1)))
+      }
+    }
+    this.handedRequests.delete(handoff.interactionId)
+    this.ctx.logger.warn('agent-team: handing a member request to the Leader failed', lastError)
+    this.refuseEvery(handoff.sessionId, `无法把请求转交给 Leader：${String(lastError)}`)
+  }
+
+  /**
+   * Settle every request one Session is waiting on. Called when no answerer is
+   * reachable at all, where leaving the request pending would block the member
+   * for good; `reason` goes to the Host log so the cause stays diagnosable.
+   */
+  private refuseEvery(sessionId: string, reason: string): void {
+    const waiting = this.interactions.list(sessionId)
+    if (waiting.length === 0) return
+    this.ctx.logger.warn(`agent-team: refusing ${waiting.length} waiting member request(s): ${reason}`)
+    for (const interaction of waiting) {
+      this.handedRequests.delete(interaction.id)
+      this.interactions.refuse(interaction.id)
     }
   }
 
@@ -1607,9 +1626,13 @@ export class TeamRuntime {
             ? undefined
             : 'This Skill is not selected for the assistant.'
         })
+        // The composition owns the permission: a member carries no settings of
+        // its own, so a team cannot start on a value its assistant no longer
+        // describes.
+        const settings = this.service.assistantSettingsFor(member)
         this.ctx.permissionPresets.set(
           agent.session,
-          member.permissionPresetId,
+          settings?.permissionPresetId ?? member.permissionPresetId,
         )
         const assembly = await agentCtx.systemPrompt.assemble(assembleContextFor(agent))
         const names = new Set(assembly.sections.map(section => section.name))

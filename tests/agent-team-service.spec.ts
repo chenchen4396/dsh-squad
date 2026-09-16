@@ -18,6 +18,7 @@ import type {
 } from '../src/domain/types.js'
 import { AgentTeamService } from '../src/service/agent-team-service.js'
 import type { AgentTeamStore } from '../src/storage/store.js'
+import { LEADER_ANSWER_TIMEOUT_MS } from '../src/runtime/team-interaction-bridge.js'
 import { TeamRuntime } from '../src/runtime/team-runtime.js'
 import type { TeamCommandHandler } from '../src/runtime/team-command-handler.js'
 import type { TeamMessageDispatcher } from '../src/runtime/team-message-dispatcher.js'
@@ -284,7 +285,9 @@ describe('AgentTeamService', () => {
     await expect(service.catalog()).resolves.toMatchObject({
       permissionPresets: [
         { value: 'standard', name: '标准' },
+        { value: 'read-only', name: '只读' },
         { value: 'workspace-write', name: '工作区可写' },
+        { value: 'danger-full-access', name: '完全访问' },
       ],
     })
   })
@@ -380,25 +383,22 @@ describe('AgentTeamService', () => {
     expect(entry.modelSelection.current).toMatchObject({ provider: 'openai', model: 'codex-2' })
   })
 
-  it('changes a draft member reasoning effort without modifying the assistant default', async () => {
+  it('gives a member the reasoning effort its assistant describes', async () => {
     const { service } = createHarness()
     const assistant = await service.createAssistant({
       ...assistantInput(),
       reasoningEffort: 'low',
     })
     const team = await service.createTeamDraft({
-      name: 'Reasoning Override Team',
-      
+      name: 'Reasoning Team',
       members: [{ assistantId: assistant.id, role: 'leader' }],
     })
     const member = team.members[team.leaderSlotId]!
+    expect(member.reasoningEffort).toBe('low')
 
-    const changed = await service.setMemberReasoningEffort(team.id, member.id, 'high')
-    const restoredDefault = await service.setMemberReasoningEffort(changed.id, member.id, undefined)
-
-    expect(changed.members[member.id]?.reasoningEffort).toBe('high')
-    expect(restoredDefault.members[member.id]?.reasoningEffort).toBeUndefined()
-    expect(service.getAssistant(assistant.id).reasoningEffort).toBe('low')
+    // A member holds no reasoning of its own: the assistant owns it.
+    await service.updateAssistant(assistant.id, { reasoningEffort: 'high' })
+    expect(service.getTeam(team.id).members[member.id]?.reasoningEffort).toBe('high')
   })
 
   it('validates an assistant draft without storing it', async () => {
@@ -456,8 +456,7 @@ describe('AgentTeamService', () => {
       ],
     })
     const memberId = Object.values(draft.members).find(member => member.role === 'member')!.id
-    const configured = await service.setMemberPermissionPreset(draft.id, memberId, 'workspace-write')
-    const source = await store.updateTeam(configured.id, team => ({
+    const source = await store.updateTeam(draft.id, team => ({
       ...team,
       tasks: {
         'task-1': {
@@ -769,6 +768,72 @@ describe('AgentTeamService', () => {
     })
   })
 
+  it('records task dependencies and refuses ones that cannot be run', async () => {
+    const { ctx, service, store, agents } = createHarness()
+    const assistant = await service.createAssistant(assistantInput())
+    const draft = await service.createTeamDraft({
+      name: 'Dependency Team',
+      members: [
+        { assistantId: assistant.id, role: 'leader' },
+        { assistantId: assistant.id, role: 'member' },
+      ],
+    })
+    await store.updateTeam(draft.id, team => ({ ...team, state: 'active' }))
+    const team = service.getTeam(draft.id)
+    const member = Object.values(team.members).find(value => value.role === 'member')!
+    const teamRuntime = new TeamRuntime(ctx, config, service)
+    const runtime = runtimeInternals(teamRuntime)
+    const { conversationId } = await ownLeader(agents, service, team.id, fakeAgent())
+    await ownMember(service, teamRuntime, team.id, member.id, fakeAgent(), conversationId)
+
+    const design = await runtime.commands.createTask(team.id, conversationId, team.leaderSlotId, {
+      title: 'Design the parser',
+      ownerSlotId: member.id,
+    })
+    const implement = await runtime.commands.createTask(team.id, conversationId, team.leaderSlotId, {
+      title: 'Implement the parser',
+      ownerSlotId: member.id,
+      dependencyIds: [design.taskId],
+    })
+
+    // The dependency is stored on the task, which is what the board draws from.
+    expect(service.getTeam(team.id).tasks[implement.taskId]?.dependencyIds).toEqual([design.taskId])
+
+    await expect(runtime.commands.createTask(team.id, conversationId, team.leaderSlotId, {
+      title: 'Written against a task that does not exist',
+      dependencyIds: ['no-such-task'],
+    })).rejects.toThrow('Unknown dependency')
+
+    await expect(runtime.commands.updateTask(team.id, conversationId, team.leaderSlotId, {
+      taskId: design.taskId,
+      status: 'running',
+      dependencyIds: [design.taskId],
+    })).rejects.toThrow('cannot depend on itself')
+
+    // design -> implement already exists, so making design wait on implement
+    // would close a cycle that no ordering could ever run.
+    await expect(runtime.commands.updateTask(team.id, conversationId, team.leaderSlotId, {
+      taskId: design.taskId,
+      status: 'running',
+      dependencyIds: [implement.taskId],
+    })).rejects.toThrow('would create a cycle')
+
+    // A member may not rewire the board.
+    await expect(runtime.commands.updateTask(team.id, conversationId, member.id, {
+      taskId: implement.taskId,
+      status: 'running',
+      dependencyIds: [],
+    })).rejects.toThrow('Only the team leader may change task dependencies')
+
+    // Clearing dependencies is the Leader's to do, and it sticks.
+    await runtime.commands.updateTask(team.id, conversationId, team.leaderSlotId, {
+      taskId: implement.taskId,
+      status: 'running',
+      dependencyIds: [],
+    })
+    expect(service.getTeam(team.id).tasks[implement.taskId]?.dependencyIds).toEqual([])
+  })
+
   it('wakes every owner of a shared task so they work on it in parallel', async () => {
     const { ctx, service, store, agents } = createHarness()
     const assistant = await service.createAssistant(assistantInput())
@@ -960,12 +1025,98 @@ describe('AgentTeamService', () => {
     service.attachRuntime(runtime)
     await ownMember(service, runtime, team.id, member.id, fakeAgent())
 
-    const changed = await service.setMemberPermissionPreset(team.id, member.id, 'workspace-write')
+    // The assistant is the only place an effective permission can be changed.
+    await service.updateAssistant(assistant.id, { permissionPresetId: 'workspace-write' })
 
     expect(permissionSet).toHaveBeenCalledWith(expect.anything(), 'workspace-write')
-    expect(changed.members[member.id]?.permissionPresetId).toBe('workspace-write')
-    expect(service.assistantForMember(changed.members[member.id]!)).toMatchObject({ permissionPresetId: 'standard' })
-    expect(service.getAssistant(assistant.id).permissionPresetId).toBe('standard')
+    expect(service.getTeam(team.id).members[member.id]?.permissionPresetId).toBe('workspace-write')
+  })
+
+  it('brings a team along when its assistant changes, so the team cannot silently drift', async () => {
+    const { ctx, service, store, permissionSet } = createHarness()
+    const assistant = await service.createAssistant(assistantInput())
+    const draft = await service.createTeamDraft({
+      name: 'Following Team',
+      members: [
+        { assistantId: assistant.id, role: 'leader' },
+        { assistantId: assistant.id, role: 'member' },
+      ],
+    })
+    await store.updateTeam(draft.id, team => ({ ...team, state: 'active' }))
+    const team = service.getTeam(draft.id)
+    const member = Object.values(team.members).find(value => value.role === 'member')!
+    const runtime = new TeamRuntime(ctx, config, service)
+    service.attachRuntime(runtime)
+    const { conversationId } = await ownMember(service, runtime, team.id, member.id, fakeAgent())
+
+    await service.updateAssistant(assistant.id, { permissionPresetId: 'workspace-write' })
+
+    // The member that follows takes the new permission, and the running Agent
+    // is re-sandboxed with it.
+    expect(service.getTeam(team.id).members[member.id]?.permissionPresetId).toBe('workspace-write')
+    expect(permissionSet).toHaveBeenCalledWith(expect.anything(), 'workspace-write')
+    void conversationId
+  })
+
+  it('brings a team bound before the rule onto its assistant at startup', async () => {
+    const { ctx, service, store } = createHarness()
+    const assistant = await service.createAssistant(assistantInput())
+    const draft = await service.createTeamDraft({
+      name: 'Legacy Team',
+      members: [
+        { assistantId: assistant.id, role: 'leader' },
+        { assistantId: assistant.id, role: 'member' },
+      ],
+    })
+    // A record written while a member still kept its own stale copy.
+    await store.updateTeam(draft.id, team => ({
+      ...team,
+      state: 'active',
+      members: Object.fromEntries(Object.entries(team.members).map(([id, member]) => [
+        id,
+        { ...member, permissionPresetId: 'read-only' },
+      ])),
+    }))
+    const member = Object.values(service.getTeam(draft.id).members)
+      .find(value => value.role === 'member')!
+
+    const runtime = new TeamRuntime(ctx, config, service)
+    service.attachRuntime(runtime)
+    await runtime.recoverTeams()
+
+    expect(service.getTeam(draft.id).members[member.id]?.permissionPresetId).toBe('standard')
+  })
+
+  it('updates an active team that has no member running yet', async () => {
+    // A team is only really running once a conversation opens it. Until then
+    // there is no live Agent to push onto, and the record is the only thing the
+    // next activation will read.
+    const { service, store } = createHarness()
+    const assistant = await service.createAssistant(assistantInput())
+    const draft = await service.createTeamDraft({
+      name: 'Idle Team',
+      members: [{ assistantId: assistant.id, role: 'leader' }],
+    })
+    await store.updateTeam(draft.id, team => ({ ...team, state: 'active' }))
+
+    await service.updateAssistant(assistant.id, { permissionPresetId: 'workspace-write' })
+
+    const leader = Object.values(service.getTeam(draft.id).members)
+      .find(value => value.role === 'leader')!
+    expect(leader.permissionPresetId).toBe('workspace-write')
+  })
+
+  it('updates a draft team record so it is right the moment it starts', async () => {
+    const { service } = createHarness()
+    const assistant = await service.createAssistant(assistantInput())
+    const draft = await service.createTeamDraft({
+      name: 'Draft Team',
+      members: [{ assistantId: assistant.id, role: 'leader' }],
+    })
+    await service.updateAssistant(assistant.id, { permissionPresetId: 'workspace-write' })
+    const leader = Object.values(service.getTeam(draft.id).members)
+      .find(value => value.role === 'leader')!
+    expect(leader.permissionPresetId).toBe('workspace-write')
   })
 })
 
@@ -1030,7 +1181,7 @@ function createHarness(workspacePath = '/tmp/agent-team-workspace'): {
   const agentCreations: Array<{ sessionId: string; parentAgent?: unknown; meta?: unknown }> = []
   const permissionSet = vi.fn()
   ctx.provide('permissionPresets', {
-    names: ['standard', 'workspace-write'],
+    names: ['standard', 'read-only', 'workspace-write', 'danger-full-access'],
     optionOf: (name: string) => ({ value: name, name }),
     set: permissionSet,
   } as never)
@@ -1056,7 +1207,7 @@ function createHarness(workspacePath = '/tmp/agent-team-workspace'): {
         parentAgent: options.parentAgent,
         meta: options.meta,
       })
-      return { agent: fakeAgent(), dispose: vi.fn(async () => {}) }
+      return { agent: fakeAgent(String(options.sessionId)), dispose: vi.fn(async () => {}) }
     },
     resume: async (options: { resumeSessionId: string; parentAgent?: unknown }) => {
       agentCreations.push({
@@ -1064,7 +1215,7 @@ function createHarness(workspacePath = '/tmp/agent-team-workspace'): {
         parentAgent: options.parentAgent,
         meta: undefined,
       })
-      return { agent: fakeAgent(), dispose: vi.fn(async () => {}) }
+      return { agent: fakeAgent(String(options.resumeSessionId)), dispose: vi.fn(async () => {}) }
     },
   } as never)
   ctx.provide('sessionPersistence', {
@@ -1101,6 +1252,8 @@ interface FakeAgent {
   cancel: ReturnType<typeof vi.fn>
   whenIdle: ReturnType<typeof vi.fn>
   status: 'idle' | 'running'
+  /** The scoped context the runtime attaches its interaction handlers to. */
+  ctx: { on: (event: string, handler: unknown) => () => void }
   session: {
     id: string
     header: { cwd?: string; delegationDepth?: number }
@@ -1145,21 +1298,98 @@ interface RuntimeInternals {
   stopMember(teamId: string, slotId: string, conversationId: string): Promise<void>
 }
 
+/** Every message a fake Agent's Session received, joined for one assertion. */
+function inboxText(agent: { session: { events: Array<{ type: string; data: { inserted: unknown[] } }> } }): string {
+  return agent.session.events
+    .filter(event => event.type === 'agent/inbox/spliced')
+    .flatMap(event => event.data.inserted)
+    .map(message => (message as { content: Array<{ text: string }> })
+      .content.map(block => block.text).join(''))
+    .join('\n')
+}
+
+/**
+ * A bound team whose member is blocked on a sandbox escalation the Leader is
+ * allowed to grant. Every escalation-raising test starts from this state.
+ */
+async function escalationHarness(beforeRequest?: (parts: {
+  ctx: Context
+  service: AgentTeamService
+  runtime: TeamRuntime
+}) => void): Promise<{
+  ctx: Context
+  service: AgentTeamService
+  runtime: TeamRuntime
+  leader: FakeLeaderAgent
+  escalation: FakeAgent
+  asked: Promise<unknown>
+}> {
+  const { ctx, service, store, agents } = createHarness()
+  const assistant = await service.createAssistant(assistantInput())
+  const draft = await service.createTeamDraft({
+    name: 'Escalation team',
+    members: [
+      { assistantId: assistant.id, role: 'leader' },
+      { assistantId: assistant.id, role: 'member' },
+    ],
+  })
+  await store.updateTeam(draft.id, team => ({ ...team, state: 'active' }))
+  const runtime = new TeamRuntime(ctx, config, service, {
+    attempts: 2,
+    retryMs: 0,
+    answerWindowMs: LEADER_ANSWER_TIMEOUT_MS,
+  })
+  service.attachRuntime(runtime)
+
+  const conversation = await bindTeam(service, draft.id, 'session-1')
+  // The Leader itself runs at workspace-write, so the escalation is within its
+  // authority and must reach it rather than the reader.
+  const leader = agents.roots.get('session-1')!
+  leader.session.events.push({ type: 'sandbox/mode', data: { mode: 'workspace-write' } } as never)
+
+  const member = Object.values(service.getTeam(draft.id).members)
+    .find(value => value.role === 'member')!
+  const escalation = fakeAgent()
+  await ownMember(service, runtime, draft.id, member.id, escalation, conversation.id)
+  const approvals = new Map<string, (request: unknown, next: () => Promise<unknown>) => Promise<unknown>>()
+  escalation.ctx = {
+    on: (event, handler) => {
+      approvals.set(event, handler as never)
+      return () => { approvals.delete(event) }
+    },
+  }
+  runtime.interactionBridge().attach(escalation.ctx as never, escalation as never)
+  beforeRequest?.({ ctx, service, runtime })
+  const asked = approvals.get('approval/request')!({
+    agent: escalation,
+    toolName: 'write',
+    callId: 'call-1',
+    reason: '需要写入工作区',
+  }, () => Promise.resolve('unavailable'))
+  return { ctx, service, runtime, leader, escalation, asked }
+}
+
 function runtimeInternals(runtime: TeamRuntime): RuntimeInternals {
   return runtime as unknown as RuntimeInternals
 }
 
-function fakeAgent(): FakeAgent {
+/**
+ * A member Agent as the factory publishes it: the Agent and its Session carry
+ * the same id the runtime recorded as owned, and `ctx` is where the runtime
+ * attaches its interaction handlers.
+ */
+function fakeAgent(sessionId = 'agent-team:fake'): FakeAgent {
   const session: FakeAgent['session'] = {
-    id: 'agent-team:fake',
+    id: sessionId,
     header: {},
     events: [],
     snapshotEvents: () => session.events,
   }
   return {
-    id: 'agent-team:fake',
+    id: sessionId,
     session,
     status: 'idle',
+    ctx: { on: () => () => {} },
     followup: vi.fn(message => {
       session.events.push({ type: 'agent/inbox/spliced', data: { inserted: [message] } })
     }),
@@ -1328,6 +1558,10 @@ async function ownMember(
   conversationId?: string,
 ): Promise<{ conversationId: string; sessionId: string }> {
   const assigned = await assignSession(service, teamId, slotId, conversationId)
+  // The published Agent and its Session always share one id, which is what the
+  // runtime keys ownership and its interaction scope by.
+  agent.id = assigned.sessionId
+  agent.session.id = assigned.sessionId
   runtimeInternals(runtime).owned.set(assigned.sessionId, {
     teamId,
     conversationId: assigned.conversationId,
@@ -1565,6 +1799,73 @@ describe('AgentTeamService session binding', () => {
     // A Session without a team has nothing to delegate.
     await expect(service.setSessionDelegation('session-unbound', true))
       .rejects.toMatchObject({ code: 'CONVERSATION_NOT_FOUND' })
+  })
+
+  it('hands a member sandbox escalation to the Leader instead of leaving it pending', async () => {
+    const { runtime, leader, escalation } = await escalationHarness()
+
+    // Members never reach the reader, so the escalation stays blocked until the
+    // Leader answers: it has to be told what is waiting and by which id.
+    const pending = await vi.waitFor(() => {
+      const listed = runtime.interactionBridge().list(String(escalation.id))
+      expect(listed).toHaveLength(1)
+      return listed[0]!
+    })
+    // Hand-off delivery is asynchronous: the Leader is told after this tick.
+    await vi.waitFor(() => { expect(inboxText(leader)).toContain('需要你裁决') })
+    const handoff = inboxText(leader)
+    expect(handoff).toContain('write')
+    expect(handoff).toContain(pending.id)
+  })
+
+  it('keeps handing a member escalation to the Leader when the conversation view cannot publish', async () => {
+    // A live SSE client whose socket just died makes the broadcast throw; the
+    // member's request must still reach the Leader.
+    const { leader } = await escalationHarness(({ ctx, service }) => {
+      vi.spyOn(service, 'publishConversation').mockImplementation(() => {
+        throw new Error('client write failed')
+      })
+      vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    })
+
+    await vi.waitFor(() => { expect(inboxText(leader)).toContain('需要你裁决') })
+  })
+
+  it('refuses a member escalation nobody answers once the answer window closes', async () => {
+    vi.useFakeTimers()
+    try {
+      const { ctx, runtime, escalation, asked } = await escalationHarness(({ ctx: hooks }) => {
+        vi.spyOn(hooks.logger, 'warn').mockImplementation(() => {})
+      })
+
+      // The hand-off reached the Leader, who never answers it.
+      await vi.waitFor(() => {
+        expect(runtime.interactionBridge().list(String(escalation.id))).toHaveLength(1)
+      })
+
+      // The member must not be left waiting on a promise that never settles.
+      await vi.advanceTimersByTimeAsync(LEADER_ANSWER_TIMEOUT_MS)
+      await expect(asked).resolves.toBe('rejected')
+      expect(runtime.interactionBridge().list(String(escalation.id))).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('refuses a member escalation it cannot hand over instead of leaving it waiting', async () => {
+    // Every hand-off attempt fails, so no answerer can be reached at all. The
+    // member must learn its request ended rather than stay blocked for good.
+    const { runtime, escalation, asked } = await escalationHarness(({ ctx, runtime: live }) => {
+      vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+      runtimeInternals(live).commands.sendMemberMessage = () =>
+        Promise.reject(new Error('leader unreachable'))
+    })
+
+    // A refusal is a normal deny outcome, not an internal failure.
+    await expect(asked).resolves.toBe('rejected')
+    await vi.waitFor(() => {
+      expect(runtime.interactionBridge().list(String(escalation.id))).toEqual([])
+    })
   })
 
   it('attaches the Leader again when the Session Agent is created later', async () => {

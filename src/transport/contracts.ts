@@ -57,8 +57,6 @@ export const AGENT_TEAM_METHODS = [
   'team.room.send',
   'team.member.stop',
   'team.interaction.respond',
-  'team.member.setPermissionPreset',
-  'team.member.setReasoningEffort',
   'assistant.ruleDocuments.list',
   'assistant.ruleDocuments.get',
   'assistant.ruleDocuments.import',
@@ -537,14 +535,6 @@ export interface AgentTeamRequestMap {
       conversationId: string
     }
     result: { accepted: boolean }
-  }
-  'team.member.setPermissionPreset': {
-    payload: { teamId: string; slotId: string; permissionPresetId: string }
-    result: TeamView
-  }
-  'team.member.setReasoningEffort': {
-    payload: { teamId: string; slotId: string; reasoningEffort?: string }
-    result: TeamView
   }
   'assistant.ruleDocuments.list': {
     payload: undefined

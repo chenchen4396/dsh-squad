@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { AgentTeamError } from '../domain/errors.js'
 import { taskAssigneeIds } from '../domain/team-selectors.js'
+import type { TeamAggregate, TeamTask } from '../domain/types.js'
 import type { AgentTeamService } from '../service/agent-team-service.js'
 import {
   assignmentContent,
@@ -40,6 +41,7 @@ export class TeamCommandHandler {
       ownerSlotId?: string
       ownerSlotIds?: string[]
       fileScopes?: string[]
+      dependencyIds?: string[]
     },
   ): Promise<{ taskId: string; status: string; deliveryState?: 'queued' | 'delivered' }> {
     const team = this.service.getTeam(teamId)
@@ -60,6 +62,7 @@ export class TeamCommandHandler {
     const taskId = randomUUID()
     const status = owners.length === 0 ? 'pending' as const : 'assigned' as const
     const fileScopes = uniqueStrings(input.fileScopes ?? [])
+    const dependencyIds = this.requireDependencies(team, conversationId, taskId, input.dependencyIds ?? [])
     /**
      * Everyone named on the task is woken with it, so a task given to several
      * members is worked on by all of them instead of waiting on one owner.
@@ -97,7 +100,7 @@ export class TeamCommandHandler {
             ownerSlotIds: owners,
             ...(owners.length === 0 ? {} : { ownerSlotId: owners[0]! }),
             createdBySlotId: creatorSlotId,
-            dependencyIds: [],
+            dependencyIds,
             fileScopes,
             revision: 1,
             createdAt: now,
@@ -133,6 +136,8 @@ export class TeamCommandHandler {
       error?: string
       ownerSlotId?: string
       ownerSlotIds?: string[]
+      /** Replaces this task's dependencies; omit to leave them as they are. */
+      dependencyIds?: string[]
     },
   ): Promise<{ taskId: string; status: string; deliveryState?: 'queued' | 'delivered' }> {
     const team = this.service.getTeam(teamId)
@@ -191,6 +196,14 @@ export class TeamCommandHandler {
         content: taskUpdateContent(task.title, input.status, input.result, input.error),
       })
     const outboxAdditions = [...assignments, ...(notification === undefined ? [] : [notification])]
+    // Dependencies may only be rewired by the Leader: a member editing its own
+    // board into a shape the team cannot run is worse than refusing the edit.
+    if (input.dependencyIds !== undefined && callerSlotId !== team.leaderSlotId) {
+      throw new AgentTeamError('INVALID_REQUEST', 'Only the team leader may change task dependencies')
+    }
+    const dependencyIds = input.dependencyIds === undefined
+      ? undefined
+      : this.requireDependencies(team, conversationId, task.id, input.dependencyIds)
     await this.service.updateRuntimeTeam(
       teamId,
       current => ({
@@ -205,6 +218,7 @@ export class TeamCommandHandler {
             ...(nextOwners === undefined
               ? {}
               : { ownerSlotId: nextOwners[0]!, ownerSlotIds: nextOwners }),
+            ...(dependencyIds === undefined ? {} : { dependencyIds }),
             revision: current.tasks[input.taskId]!.revision + 1,
             updatedAt: new Date().toISOString(),
           },
@@ -231,8 +245,45 @@ export class TeamCommandHandler {
     }
   }
 
-  async sendMemberMessage(
-    teamId: string,
+  /**
+   * Validate one task's dependencies before they are written.
+   *
+   * A dependency is only useful if the board can act on it, so every id has to
+   * name a task of the same conversation, none may name the task itself, and the
+   * result must stay acyclic: a cycle has no runnable order, and a board that
+   * holds one can never finish.
+   */
+  private requireDependencies(
+    team: TeamAggregate,
+    conversationId: string,
+    taskId: string,
+    requested: readonly string[],
+  ): string[] {
+    const dependencyIds = uniqueStrings([...requested])
+    for (const dependencyId of dependencyIds) {
+      if (dependencyId === taskId) {
+        throw new AgentTeamError('INVALID_REQUEST', 'A task cannot depend on itself')
+      }
+      const dependency = team.tasks[dependencyId]
+      if (dependency === undefined || dependency.conversationId !== conversationId) {
+        throw new AgentTeamError(
+          'INVALID_REQUEST',
+          `Unknown dependency '${dependencyId}': a task may only depend on a task of this conversation`,
+        )
+      }
+    }
+    const closes = dependencyIds.find(dependencyId =>
+      reaches(team.tasks, dependencyId, taskId))
+    if (closes !== undefined) {
+      throw new AgentTeamError(
+        'INVALID_REQUEST',
+        `Dependency '${closes}' would create a cycle`,
+      )
+    }
+    return dependencyIds
+  }
+
+  async sendMemberMessage(    teamId: string,
     conversationId: string,
     senderSlotId: string,
     recipientSlotId: string,
@@ -279,6 +330,30 @@ export class TeamCommandHandler {
       throw error
     }
   }
+}
+
+/**
+ * Whether `from` reaches `target` by following dependencies.
+ *
+ * Used to reject a dependency that would close a cycle. A visited set keeps a
+ * pre-existing cycle (which validation already forbids, but a stored record may
+ * still hold one) from looping forever.
+ */
+function reaches(
+  tasks: Record<string, TeamTask>,
+  from: string,
+  target: string,
+): boolean {
+  const seen = new Set<string>()
+  const stack = [from]
+  while (stack.length > 0) {
+    const current = stack.pop()!
+    if (current === target) return true
+    if (seen.has(current)) continue
+    seen.add(current)
+    for (const next of tasks[current]?.dependencyIds ?? []) stack.push(next)
+  }
+  return false
 }
 
 function requireShortText(value: string, label: string, maxLength: number): string {

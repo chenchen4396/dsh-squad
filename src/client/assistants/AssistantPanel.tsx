@@ -24,6 +24,7 @@ import type {
 import { isMarkdownRulePath, markdownRuleExtensions } from '../../domain/rule-format.js'
 import { callAgentTeam, subscribeAssistantBuilderConversation } from '../api.js'
 import css from '../AgentTeam.module.css'
+import { defaultPermissionPreset } from './assistant-permission.js'
 import { shouldSubmitComposer } from '../keyboard.js'
 import { PERMISSION_LABELS } from '../labels.js'
 import { markdownLabels } from '../native-locale.js'
@@ -932,7 +933,7 @@ function AssistantForm({
   const [modelChoice, setModelChoice] = useState(assistant?.model ?? '')
   const [reasoningEffort, setReasoningEffort] = useState(assistant?.reasoningEffort ?? '')
   const [agentPresetId, setAgentPresetId] = useState(assistant?.agentPresetId ?? presets[0]?.id ?? '')
-  const [permissionPresetId, setPermissionPresetId] = useState(assistant?.permissionPresetId ?? permissions[0]?.value ?? '')
+  const [permissionPresetId, setPermissionPresetId] = useState(assistant?.permissionPresetId ?? defaultPermissionPreset(permissions))
   const [availableSkills, setAvailableSkills] = useState<SkillCatalogView['skills']>([])
   const [selectedSkills, setSelectedSkills] = useState<string[]>(assistant?.skillAllowlist ?? [])
   const [skillsLoading, setSkillsLoading] = useState(false)
@@ -959,7 +960,7 @@ function AssistantForm({
   useEffect(() => {
     if (!provider && providers[0]) setProvider(providers[0].id)
     if (!agentPresetId && presets[0]) setAgentPresetId(presets[0].id)
-    if (!permissionPresetId && permissions[0]) setPermissionPresetId(permissions[0].value)
+    if (!permissionPresetId && permissions[0]) setPermissionPresetId(defaultPermissionPreset(permissions))
   }, [agentPresetId, permissionPresetId, permissions, presets, provider, providers])
   useEffect(() => {
     setModelChoice(current => {

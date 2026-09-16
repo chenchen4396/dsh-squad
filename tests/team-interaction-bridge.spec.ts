@@ -260,3 +260,82 @@ function fakeAgentContext(): {
     },
   }
 }
+
+/**
+ * A claimed request has no answerer other than this plugin, so without a
+ * deadline nobody has to answer it and the member waits on a promise that never
+ * settles. The window is what makes "no answer" a decision instead of a hang.
+ */
+describe('TeamInteractionBridge bounded wait', () => {
+  it('refuses an approval nobody answered once the window closes', async () => {
+    vi.useFakeTimers()
+    try {
+      const bridge = new TeamInteractionBridge({} as Context, {
+        acceptsSession: () => true,
+        onChange: vi.fn(),
+      })
+      const agentCtx = fakeAgentContext()
+      bridge.attach(agentCtx.ctx, agentOf('session-10'))
+
+      const outcome = agentCtx.ask('approval/request', { toolName: 'write' })
+      await vi.waitFor(() => { expect(bridge.list('session-10')).toHaveLength(1) })
+      const pending = bridge.list('session-10')[0]!
+      bridge.armDeadline(pending.id, 60_000)
+
+      // Still the Leader's to answer before the window closes.
+      await vi.advanceTimersByTimeAsync(59_999)
+      expect(bridge.list('session-10')).toHaveLength(1)
+
+      await vi.advanceTimersByTimeAsync(1)
+      await expect(outcome).resolves.toBe('rejected')
+      expect(bridge.list('session-10')).toEqual([])
+      await bridge.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('leaves an answered request alone when the window closes later', async () => {
+    vi.useFakeTimers()
+    try {
+      const bridge = new TeamInteractionBridge({} as Context, {
+        acceptsSession: () => true,
+        onChange: vi.fn(),
+      })
+      const agentCtx = fakeAgentContext()
+      bridge.attach(agentCtx.ctx, agentOf('session-11'))
+
+      const outcome = agentCtx.ask('approval/request', { toolName: 'write' })
+      await vi.waitFor(() => { expect(bridge.list('session-11')).toHaveLength(1) })
+      const pending = bridge.list('session-11')[0]!
+      bridge.armDeadline(pending.id, 60_000)
+
+      bridge.answerAsLeader(pending.id, { decision: 'allow' })
+      await expect(outcome).resolves.toBe('allowed-once')
+
+      // The timer must not touch a request that is already settled.
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(bridge.list('session-11')).toEqual([])
+      await bridge.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not arm a wait when there is no window', async () => {
+    const bridge = new TeamInteractionBridge({} as Context, {
+      acceptsSession: () => true,
+      onChange: vi.fn(),
+    })
+    const agentCtx = fakeAgentContext()
+    bridge.attach(agentCtx.ctx, agentOf('session-12'))
+    const outcome = agentCtx.ask('approval/request', { toolName: 'write' })
+    await vi.waitFor(() => { expect(bridge.list('session-12')).toHaveLength(1) })
+    const pending = bridge.list('session-12')[0]!
+    bridge.armDeadline(pending.id, 0)
+    expect(bridge.list('session-12')).toHaveLength(1)
+    bridge.answerAsLeader(pending.id, { decision: 'deny' })
+    await expect(outcome).resolves.toBe('rejected')
+    await bridge.dispose()
+  })
+})

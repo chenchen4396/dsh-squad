@@ -16,6 +16,7 @@ interface TeamToolHandlers {
     ownerSlotId?: string
     ownerSlotIds?: string[]
     fileScopes?: string[]
+    dependencyIds?: string[]
   }) => Promise<{ taskId: string; status: string; deliveryState?: 'queued' | 'delivered' }>
   updateTask: (input: {
     taskId: string
@@ -24,6 +25,7 @@ interface TeamToolHandlers {
     error?: string
     ownerSlotId?: string
     ownerSlotIds?: string[]
+    dependencyIds?: string[]
   }) => Promise<{ taskId: string; status: string; deliveryState?: 'queued' | 'delivered' }>
   sendMessage: (
     recipientSlotId: string,
@@ -86,6 +88,11 @@ export function registerTeamTools(
         description: 'Member slot ids to work on this task together; every one of them is woken with the task at once.',
       },
       fileScopes: { type: 'array', items: { type: 'string' }, description: 'Workspace-relative file scopes.' },
+      dependencyIds: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Task ids this task waits on. Its owner should not start before they complete; the board shows the dependency.',
+      },
     },
     output: {
       schema: {
@@ -124,6 +131,11 @@ export function registerTeamTools(
         type: 'array',
         items: { type: 'string' },
         description: 'Leader-only: the new owner set; newly added owners are woken with the task.',
+      },
+      dependencyIds: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Leader-only: replace the task ids this task waits on. Omit to leave them unchanged.',
       },
     },
     output: {

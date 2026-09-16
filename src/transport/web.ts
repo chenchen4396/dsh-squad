@@ -463,32 +463,6 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
       )
       return { accepted: true }
     }
-    case 'team.member.setPermissionPreset': {
-      const payload = z.object({
-        teamId: z.string().min(1),
-        slotId: z.string().min(1),
-        permissionPresetId: z.string().min(1),
-      }).strict().parse(request.payload)
-      return service.setMemberPermissionPreset(
-        payload.teamId,
-        payload.slotId,
-        payload.permissionPresetId,
-        options,
-      )
-    }
-    case 'team.member.setReasoningEffort': {
-      const payload = z.object({
-        teamId: z.string().min(1),
-        slotId: z.string().min(1),
-        reasoningEffort: z.string().trim().min(1).max(200).optional(),
-      }).strict().parse(request.payload)
-      return service.setMemberReasoningEffort(
-        payload.teamId,
-        payload.slotId,
-        payload.reasoningEffort,
-        options,
-      )
-    }
     case 'assistant.ruleDocuments.list':
       return documentCatalog(service)
     case 'assistant.ruleDocuments.get': {

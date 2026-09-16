@@ -21,8 +21,9 @@ import type {
 import { callAgentTeam, subscribeAgentTeamConversation } from '../api.js'
 import { AssistantPanel } from '../assistants/AssistantPanel.js'
 import css from '../AgentTeam.module.css'
-import { orderedMembers, taskAssigneeIds } from '../../domain/team-selectors.js'
+import { orderedMembers } from '../../domain/team-selectors.js'
 import { assistantForMember } from '../member-assistant.js'
+import { TaskFlowChart } from './TaskFlowChart.js'
 import {
   mergeMemberConversation,
   mergeWorkbenchLoad,
@@ -33,7 +34,6 @@ import {
   memberModelLabel,
   memberStatusLabel,
   modelDisplayName,
-  TASK_STATE_LABELS,
 } from '../labels.js'
 import type { MemberModelLabel } from '../labels.js'
 import { agoLabel } from '../native-locale.js'
@@ -195,7 +195,7 @@ export function TeamWorkbench({
    */
   const [workspaceVisible, setWorkspaceVisible] = useState(false)
   const [workspaceRefreshSignal, setWorkspaceRefreshSignal] = useState(0)
-  const [view, setView] = useState<'room' | 'members'>('room')
+  const [view, setView] = useState<'room' | 'members' | 'flow'>('room')
   const refreshTimer = useRef<ReturnType<typeof setTimeout>>()
   const loadGeneration = useRef(0)
   /**
@@ -311,6 +311,9 @@ export function TeamWorkbench({
   const visibleMembers = visibleMemberSlots(memberIds, pickedSlotId)
     .map(slotId => team.members[slotId])
     .filter((value): value is TeamView['members'][string] => value !== undefined)
+  // The board is conversation-scoped, exactly like the shared room.
+  const conversationTasks = Object.values(team.tasks)
+    .filter(task => task.conversationId === conversationId)
   const focusedMember = expandedSlotId === undefined ? undefined : team.members[expandedSlotId]
   /**
    * The member this view is addressing, when it is one.
@@ -429,6 +432,15 @@ export function TeamWorkbench({
           >
             成员视图
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'flow'}
+            className={`${css.viewToggleButton} ${view === 'flow' ? css.viewToggleButtonActive : ''}`}
+            onClick={() => { setView('flow') }}
+          >
+            流程图
+          </button>
         </span>
         <span className={css.memberTabsDivider} aria-hidden="true" />
         {members.map(member => {
@@ -510,7 +522,11 @@ export function TeamWorkbench({
           />
         )}
         <div className={css.workbenchBody}>
-          {view === 'room'
+          {view === 'flow'
+            ? (
+                <TaskFlowChart tasks={conversationTasks} members={team.members} />
+              )
+            : view === 'room'
             ? (
                 <MeetingRoom
                   team={team}
@@ -957,7 +973,6 @@ function TeamDetail({
   const [error, setError] = useState<string>()
   const members = orderedMembers(team)
   const leader = team.members[team.leaderSlotId]
-  const tasks = Object.values(team.tasks)
   const executing = isTeamExecuting(team)
   const now = Date.now()
 
@@ -1148,25 +1163,6 @@ function TeamDetail({
               )
             })}
           </ul>
-          {tasks.length > 0 && (
-            <div className={css.taskList}>
-              <strong className={css.taskTitle}>任务板</strong>
-              {tasks.map(task => {
-                const owners = taskAssigneeIds(task)
-                return (
-                  <div key={task.id} className={css.memberRow}>
-                    <span>{task.title}</span>
-                    <span className={css.muted}>
-                      {TASK_STATE_LABELS[task.status] ?? task.status}
-                      {owners.length === 0
-                        ? ''
-                        : ` · ${owners.map(slotId => team.members[slotId]?.displayName ?? '已移除成员').join('、')}`}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
           <div className={`${css.contextResetPanel} ${css.cloneTeamPanel ?? ''}`}>
             <div className={css.contextResetCopy}>
               <strong>复制团队</strong>

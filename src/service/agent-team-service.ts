@@ -464,7 +464,7 @@ export class AgentTeamService extends Service {
     await this.store.deleteRuleDocument(id)
     for (const assistant of owners) {
       const next = this.store.getAssistant(assistant.id)
-      if (next !== undefined) this.runtime?.refreshAssistantModel(next)
+      if (next !== undefined) this.runtime?.refreshAssistantSettings(next)
     }
     await this.activity(
       'assistant.rule_deleted',
@@ -579,11 +579,105 @@ export class AgentTeamService extends Service {
       updatedAt: new Date().toISOString(),
     }))
     await this.activity('assistant.updated', next.id, next.revision, `Assistant ${next.name} updated`)
-    // Members inherit the template live, but an Agent that is already running
-    // holds the selection it was created with, so push the new model onto it.
-    this.runtime?.refreshAssistantModel(next)
+    // Members inherit the template live, but one that is already running holds
+    // the selection and sandbox it was created with, so the edit is pushed onto
+    // the members that still follow this assistant. Without this the teams drift
+    // from their assistant and nothing on screen says so.
+    await this.followAssistant(next)
     this.publish('assistant', next.id, next.revision, 'assistant.updated')
     return next
+  }
+
+  /**
+   * The permission and reasoning a member runs with.
+   *
+   * A member has no settings of its own: its assistant owns them, and this is
+   * the single place that says so. Everything that used to keep its own copy —
+   * activation, the running Agent, the stored record — reads it from here, so
+   * the team can never drift from the assistant that describes it.
+   */
+  assistantSettingsFor(member: TeamMemberSlot): {
+    permissionPresetId: string
+    reasoningEffort?: string
+  } | undefined {
+    const assistant = this.store.getAssistant(member.assistantId)
+    if (assistant === undefined) return undefined
+    return {
+      permissionPresetId: assistant.permissionPresetId,
+      ...(assistant.reasoningEffort === undefined ? {} : { reasoningEffort: assistant.reasoningEffort }),
+    }
+  }
+
+  /** Rewrite every member of one team onto its assistant's current settings. */
+  private membersOntoAssistants(team: TeamAggregate): TeamAggregate {
+    return {
+      ...team,
+      members: mapTeamMembers(team, member => {
+        const settings = this.assistantSettingsFor(member)
+        if (settings === undefined) return member
+        if (!this.ctx.permissionPresets.names.includes(settings.permissionPresetId)) return member
+        return {
+          ...member,
+          permissionPresetId: settings.permissionPresetId,
+          reasoningEffort: settings.reasoningEffort,
+        }
+      }),
+    }
+  }
+
+  /**
+   * Bring the members of every team back in line with an edited assistant.
+   *
+   * Members follow their assistant completely, so an edit has to reach the
+   * records the next activation reads *and* the Agents already running. Draft
+   * and archived teams have no runtime, so their records are all that changes.
+   */
+  private async followAssistant(assistant: AssistantTemplate): Promise<void> {
+    // A template may name a preset this deployment does not offer (an assistant
+    // imported from elsewhere). Writing it would make every member unstartable,
+    // so such a template is left alone rather than followed into a dead end.
+    if (!this.ctx.permissionPresets.names.includes(assistant.permissionPresetId)) return
+    const teams = this.store.listTeams()
+      .filter(team => Object.values(team.members).some(member => member.assistantId === assistant.id))
+    if (teams.length === 0) return
+    // Members that are already running hold the sandbox they were created with,
+    // so the runtime re-sandboxes the ones this assistant owns. A team with no
+    // running member still needs its record updated — that record is what the
+    // next activation reads.
+    this.runtime?.refreshAssistantSettings(assistant)
+    for (const team of teams) {
+      await this.updateRuntimeTeam(
+        team.id,
+        current => this.membersOntoAssistants(current),
+        'team.members_followed_assistant',
+        `Members of ${team.name} follow assistant ${assistant.name}`,
+      )
+    }
+  }
+
+  /**
+   * Bring every member of every team onto its assistant once, at startup.
+   *
+   * Members used to keep their own copy of the permission, so a team could sit
+   * on a stale value indefinitely — visible in the team view and, worse, the
+   * sandbox the member actually ran with. The composition is authoritative now,
+   * and this closes the gap for teams bound before that.
+   */
+  async followAssistants(): Promise<void> {
+    const teams = this.store.listTeams()
+      .filter(team => Object.values(team.members).some(member => (
+        this.assistantSettingsFor(member) !== undefined
+      )))
+    for (const team of teams) {
+      const next = this.membersOntoAssistants(team)
+      if (JSON.stringify(next.members) === JSON.stringify(team.members)) continue
+      await this.updateRuntimeTeam(
+        team.id,
+        current => this.membersOntoAssistants(current),
+        'team.members_followed_assistant',
+        `Members of ${team.name} followed their assistants on startup`,
+      )
+    }
   }
 
   async cloneAssistant(id: string, name?: string): Promise<AssistantTemplate> {
@@ -1105,86 +1199,6 @@ export class AgentTeamService extends Service {
       .respondToInteraction(teamId, slotId, interactionId, response, conversationId)
   }
 
-  async setMemberPermissionPreset(
-    teamId: string,
-    slotId: string,
-    rawPermissionPresetId: string,
-    options: MutationOptions = {},
-  ): Promise<TeamAggregate> {
-    const permissionPresetId = rawPermissionPresetId.trim()
-    const team = requireTeam(this.store, teamId)
-    assertTeamMutable(team)
-    assertRevision('team', team.revision, options.expectedRevision)
-    const member = team.members[slotId]
-    if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-    if (!this.ctx.permissionPresets.names.includes(permissionPresetId)) {
-      throw new AgentTeamError(
-        'PERMISSION_PRESET_INVALID',
-        `Unknown permission preset '${permissionPresetId}'`,
-      )
-    }
-    if (member.permissionPresetId === permissionPresetId) return team
-    if (team.state === 'draft') {
-      const next = await this.store.updateTeam(teamId, current => ({
-        ...current,
-        members: Object.fromEntries(Object.entries(current.members).map(([id, currentMember]) => [
-          id,
-          id === slotId ? { ...currentMember, permissionPresetId } : currentMember,
-        ])),
-        revision: current.revision + 1,
-        updatedAt: new Date().toISOString(),
-      }))
-      await this.activity(
-        'team.member_permission_changed',
-        teamId,
-        next.revision,
-        `Member ${member.displayName} permission changed to ${permissionPresetId}`,
-      )
-      this.publish('team', teamId, next.revision, 'team.member_permission_changed')
-      return next
-    }
-    return this.requireRuntime().setMemberPermissionPreset(teamId, slotId, permissionPresetId)
-  }
-
-  async setMemberReasoningEffort(
-    teamId: string,
-    slotId: string,
-    rawReasoningEffort: string | undefined,
-    options: MutationOptions = {},
-  ): Promise<TeamAggregate> {
-    const reasoningEffort = rawReasoningEffort?.trim() || undefined
-    const team = requireTeam(this.store, teamId)
-    assertTeamMutable(team)
-    assertRevision('team', team.revision, options.expectedRevision)
-    const member = team.members[slotId]
-    if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-    await this.validateReasoningEffort(
-      this.assistantForMember(member).provider,
-      this.assistantForMember(member).model,
-      reasoningEffort,
-    )
-    if (member.reasoningEffort === reasoningEffort) return team
-    if (team.state === 'draft') {
-      const next = await this.store.updateTeam(teamId, current => ({
-        ...current,
-        members: Object.fromEntries(Object.entries(current.members).map(([id, currentMember]) => [
-          id,
-          id === slotId ? withReasoningEffort(currentMember, reasoningEffort) : currentMember,
-        ])),
-        revision: current.revision + 1,
-        updatedAt: new Date().toISOString(),
-      }))
-      await this.activity(
-        'team.member_reasoning_changed',
-        teamId,
-        next.revision,
-        `Member ${member.displayName} reasoning changed to ${reasoningEffort ?? 'model default'}`,
-      )
-      this.publish('team', teamId, next.revision, 'team.member_reasoning_changed')
-      return next
-    }
-    return this.requireRuntime().setMemberReasoningEffort(teamId, slotId, reasoningEffort)
-  }
 
   publishConversation(teamId: string, revision: number, conversation?: MemberConversationView): void {
     this.publish('conversation', teamId, revision, 'member.conversation', conversation)
@@ -1475,6 +1489,14 @@ function assertTeamMutable(team: TeamAggregate): void {
   if (team.state === 'deleting' || team.state === 'delete_blocked') {
     throw new AgentTeamError('TEAM_DELETING', `Team '${team.id}' is deleting`)
   }
+}
+
+/** Replace every member of one team through a pure mapper. */
+function mapTeamMembers(
+  team: TeamAggregate,
+  change: (member: TeamMemberSlot) => TeamMemberSlot,
+): Record<string, TeamMemberSlot> {
+  return Object.fromEntries(Object.entries(team.members).map(([id, member]) => [id, change(member)]))
 }
 
 function assistantInputOf(assistant: AssistantTemplate): CreateAssistantInput {

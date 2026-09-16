@@ -3451,3 +3451,567 @@ textarea.input {
   flex: none;
   color: var(--dsw-alias-label-caption);
 }
+
+/*
+ * The task board: the work still moving on the left, the finished work archived
+ * on the right.
+ *
+ * Rounded throughout — capsules, badges and soft corners — and painted from the
+ * theme's own tokens so it follows light and dark instead of carrying a palette
+ * of its own. Every state shows as a filled badge plus a matching left edge, so
+ * the card body needs no tint and stays legible on either theme.
+ */
+.taskFlow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.taskFlowBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.taskFlowProgress {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.taskFlowProgressTrack {
+  display: inline-block;
+  width: 96px;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.taskFlowProgressFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-success-primary);
+  transition: width 0.25s ease;
+}
+
+.taskFlowProgressText {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.taskFlowLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.taskFlowLegendItem {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+/* The legend swatch is the only place every state appears at once, so each dot
+   uses the same accent as the card it stands for. */
+.taskFlowDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.taskFlowLegendItem[data-state='done'] .taskFlowDot {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.taskFlowLegendItem[data-state='running'] .taskFlowDot {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.taskFlowLegendItem[data-state='ready'] .taskFlowDot {
+  background: var(--dsw-alias-state-warn-primary);
+}
+
+.taskFlowLegendItem[data-state='blocked'] .taskFlowDot {
+  background: var(--dsw-static-amber-600, var(--dsw-alias-state-warn-primary));
+}
+
+.taskFlowLegendItem[data-state='failed'] .taskFlowDot {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.taskFlowLegendItem[data-state='cancelled'] .taskFlowDot {
+  background: var(--dsw-static-neutral-bluish-600, var(--dsw-alias-label-caption));
+}
+
+/* The legend carries the reference chart's two dependency facts. */
+.taskFlowLegendRule,
+.taskFlowLegendBlocked {
+  display: inline-block;
+  width: 20px;
+  height: 0;
+  border-top-width: 2.5px;
+  border-top-style: solid;
+  border-radius: 999px;
+}
+
+.taskFlowLegendRule {
+  border-top-color: var(--dsw-alias-label-tertiary);
+}
+
+.taskFlowLegendBlocked {
+  border-top-color: var(--dsw-alias-border-l3);
+  border-top-style: dashed;
+}
+
+/* The left half is the work; the right half is the archive beside it. */
+.taskFlowSplit {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.taskFlowActive {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.taskFlowArchive {
+  flex: 0 0 176px;
+  min-width: 0;
+}
+
+.taskFlowArchiveDetails {
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.taskFlowSectionHead {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  justify-content: space-between;
+  list-style: none;
+  cursor: pointer;
+}
+
+.taskFlowArchiveDetails > summary::-webkit-details-marker {
+  display: none;
+}
+
+.taskFlowSectionTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+}
+
+.taskFlowSectionCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.taskFlowEmpty {
+  margin: 6px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+}
+
+.taskFlowCanvas {
+  overflow: auto;
+  min-width: 0;
+}
+
+.taskFlowSvg {
+  display: block;
+  max-width: none;
+}
+
+/* The arrow carries the colour of the task it leaves, and a dashed line means
+   that task has not finished yet — the dependency is not satisfied. */
+.taskFlowEdge {
+  stroke: var(--dsw-alias-state-success-primary);
+  stroke-width: 2.4;
+}
+
+.taskFlowEdge[data-state='running'] {
+  stroke: var(--dsw-alias-state-business-primary);
+}
+
+.taskFlowEdge[data-state='ready'] {
+  stroke: var(--dsw-alias-state-warn-primary);
+}
+
+.taskFlowEdge[data-state='blocked'] {
+  stroke: var(--dsw-static-amber-600, var(--dsw-alias-state-warn-primary));
+  stroke-dasharray: 5 5;
+}
+
+.taskFlowEdge[data-state='failed'] {
+  stroke: var(--dsw-alias-state-error-primary);
+}
+
+.taskFlowEdge[data-state='cancelled'] {
+  stroke: var(--dsw-static-neutral-bluish-600, var(--dsw-alias-label-caption));
+  stroke-dasharray: 5 5;
+}
+
+.taskFlowNode {
+  cursor: pointer;
+  outline: none;
+}
+
+.taskFlowCard {
+  /*
+   * Each state gets its own surface tint, derived from one semantic accent so
+   * light and dark both stay in step. The fallback before the comma is the
+   * plain surface: a build without `color-mix` still gets a clean card.
+   */
+  fill: var(--dsw-alias-bg-layer-2);
+  stroke: var(--flow-card-accent, var(--dsw-alias-border-l2));
+  stroke-width: 1.4;
+  transition: fill 0.15s ease, stroke 0.15s ease;
+}
+
+@supports (color: color-mix(in srgb, red, blue)) {
+  .taskFlowNode[data-state='done'] .taskFlowCard {
+    fill: color-mix(in srgb, var(--dsw-alias-state-success-primary) 16%, var(--dsw-alias-bg-layer-1));
+  }
+
+  .taskFlowNode[data-state='running'] .taskFlowCard {
+    fill: color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, var(--dsw-alias-bg-layer-1));
+  }
+
+  .taskFlowNode[data-state='ready'] .taskFlowCard {
+    fill: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 16%, var(--dsw-alias-bg-layer-1));
+  }
+
+  .taskFlowNode[data-state='blocked'] .taskFlowCard {
+    fill: color-mix(in srgb, var(--dsw-static-amber-600, var(--dsw-alias-state-warn-primary)) 14%, var(--dsw-alias-bg-layer-1));
+  }
+
+  .taskFlowNode[data-state='failed'] .taskFlowCard {
+    fill: color-mix(in srgb, var(--dsw-alias-state-error-primary) 16%, var(--dsw-alias-bg-layer-1));
+  }
+
+  .taskFlowNode[data-state='cancelled'] .taskFlowCard {
+    fill: color-mix(in srgb, var(--dsw-static-neutral-bluish-600, var(--dsw-alias-label-caption)) 12%, var(--dsw-alias-bg-layer-1));
+  }
+}
+
+.taskFlowNode:hover .taskFlowCard {
+  filter: brightness(1.06);
+}
+
+.taskFlowNode[data-state='done'] {
+  --flow-card-accent: var(--dsw-alias-state-success-primary);
+}
+
+.taskFlowNode[data-state='running'] {
+  /* `brand-primary` is the ink colour, not a hue: the blue accent is business. */
+  --flow-card-accent: var(--dsw-alias-state-business-primary);
+}
+
+.taskFlowNode[data-state='ready'] {
+  --flow-card-accent: var(--dsw-alias-state-warn-primary);
+}
+
+.taskFlowNode[data-state='blocked'] {
+  /*
+   * Two ambers on purpose: a task waiting on a dependency is the same warmth as
+   * one that is ready, and only the shade tells them apart. Waiting takes the
+   * deeper shade — it is the state that needs the reader's attention.
+   */
+  --flow-card-accent: var(--dsw-static-amber-600, var(--dsw-alias-state-warn-primary));
+}
+
+.taskFlowNode[data-state='failed'] {
+  --flow-card-accent: var(--dsw-alias-state-error-primary);
+}
+
+.taskFlowNode[data-state='cancelled'] {
+  --flow-card-accent: var(--dsw-static-neutral-bluish-600, var(--dsw-alias-label-tertiary));
+}
+
+.taskFlowNode[data-selected='true'] .taskFlowCard,
+.taskFlowNode:focus-visible .taskFlowCard {
+  stroke-width: 2.4;
+  filter: brightness(1.04) saturate(1.15);
+}
+
+/* The badge is the state, spelled the way the reference chart spells it. */
+.taskFlowBadge {
+  fill: var(--flow-card-accent, var(--dsw-alias-label-tertiary));
+}
+
+.taskFlowBadgeText {
+  fill: var(--dsw-alias-label-primary-foreground);
+  font-family: var(--dsw-font-family);
+  font-size: 9px;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+
+.taskFlowLabel {
+  fill: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+  user-select: none;
+}
+
+.taskFlowSubtitle {
+  fill: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-family);
+  font-size: 10px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.taskFlowArchiveList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.taskFlowArchiveItem {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-family);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.taskFlowArchiveItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.taskFlowArchiveItem[data-selected='true'] {
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+.taskFlowArchiveTick {
+  flex: none;
+  color: var(--dsw-alias-state-success-primary);
+  font-size: 11px;
+}
+
+.taskFlowArchiveLabel {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.taskFlowDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 13px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-left: 3px solid var(--dsw-alias-border-l3);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-module-platform);
+  box-shadow: var(--dsw-elevation-soft);
+}
+
+.taskFlowDetail[data-state='done'] {
+  border-left-color: var(--dsw-alias-state-success-primary);
+}
+
+.taskFlowDetail[data-state='running'] {
+  border-left-color: var(--dsw-alias-state-business-primary);
+}
+
+.taskFlowDetail[data-state='blocked'] {
+  border-left-color: var(--dsw-static-amber-600, var(--dsw-alias-state-warn-primary));
+}
+
+.taskFlowDetail[data-state='failed'] {
+  border-left-color: var(--dsw-alias-state-error-primary);
+}
+
+.taskFlowDetailHead {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.taskFlowDetailTitle {
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+}
+
+.taskFlowDetailState {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
+.taskFlowDetailState[data-state='done'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.taskFlowDetailState[data-state='running'] {
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.taskFlowDetailState[data-state='blocked'] {
+  color: var(--dsw-static-amber-600, var(--dsw-alias-state-warn-primary));
+}
+
+.taskFlowDetailState[data-state='failed'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.taskFlowDetailFacts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.taskFlowDetailFacts dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.taskFlowDetailFacts dd {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.taskFlowDetailDescription {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.taskFlowDetailLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.taskFlowDetailLink {
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-family);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.taskFlowDetailLink:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* On a narrow panel the two halves stack, archive first: the finished count is
+   the shorter thing to read. */
+@media (max-width: 720px) {
+  .taskFlowSplit {
+    flex-direction: column-reverse;
+  }
+
+  .taskFlowArchive {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+
+/* The state's hue rides a bar down the card's open side, so the title keeps
+   full contrast while the card still reads as its own colour. */
+.taskFlowAccent {
+  fill: var(--flow-card-accent, var(--dsw-alias-label-tertiary));
+}
+
+/*
+ * The work in flight moves.
+ *
+ * Only the running state animates, and only by opacity: a task that is being
+ * worked on breathes while everything else holds still, so the surface says at
+ * a glance where attention is going. Opacity keeps it cheap on a graph that may
+ * hold many nodes, and every animation is dropped for a reader who asked for
+ * reduced motion.
+ */
+@keyframes agentTeamTaskHalo {
+  50% { opacity: 0.28; }
+}
+
+@keyframes agentTeamTaskAccent {
+  50% { opacity: 0.55; }
+}
+
+/* A soft halo behind the card, drawn from the state's own hue. */
+.taskFlowHalo {
+  fill: var(--flow-card-accent, var(--dsw-alias-label-tertiary));
+  opacity: 0.12;
+  pointer-events: none;
+}
+
+.taskFlowNode[data-state='running'] .taskFlowHalo {
+  animation: agentTeamTaskHalo 2.4s ease-in-out infinite;
+}
+
+.taskFlowNode[data-state='running'] .taskFlowAccent {
+  animation: agentTeamTaskAccent 1.8s ease-in-out infinite;
+}
+
+/* The header line keeps time with the graph beneath it. */
+.taskFlowNode[data-state='running'] .taskFlowCard {
+  stroke-width: 1.8;
+}
+
+.taskFlowProgressFill[data-active='true'] {
+  animation: agentTeamTaskHalo 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .taskFlowHalo,
+  .taskFlowAccent,
+  .taskFlowProgressFill {
+    animation: none;
+  }
+}

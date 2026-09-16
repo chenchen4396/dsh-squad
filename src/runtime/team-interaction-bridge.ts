@@ -56,6 +56,9 @@ export interface TeamInteractionScope {
   onChange: (sessionId: string) => void
 }
 
+/** How long a member's request may wait for the Leader before it is refused. */
+export const LEADER_ANSWER_TIMEOUT_MS = 120_000
+
 /**
  * Answers Harness human-interaction requests (questions and approvals) for the
  * Agents this plugin owns.
@@ -69,6 +72,15 @@ export interface TeamInteractionScope {
 export class TeamInteractionBridge {
   private readonly records = new Map<string, PendingInteractionRecord>()
   private readonly scopes = new Set<TeamInteractionScope>()
+  /**
+   * The bounded wait armed for requests the plugin answers itself.
+   *
+   * A member cannot raise the Harness's own approval prompt, so a claimed
+   * request has no answerer other than this plugin. Without a deadline nobody
+   * has to answer it, and the member waits on a promise that never settles —
+   * it keeps reporting `running` and the work simply stops.
+   */
+  private readonly deadlines = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor(
     private readonly ctx: Context,
@@ -110,6 +122,33 @@ export class TeamInteractionBridge {
   pending(interactionId: string): PendingInteractionView | undefined {
     const record = this.records.get(interactionId)
     return record === undefined ? undefined : toView(record)
+  }
+
+  /**
+   * Start the bounded wait for a request the Leader has been asked to answer.
+   *
+   * When the window closes, the request is refused rather than left pending:
+   * the member then gets a denial it can act on instead of hanging for good.
+   * Every scope's `onChange` has already run by then, so the card stays visible
+   * for the reader in the meantime.
+   */
+  armDeadline(interactionId: string, waitMs: number): void {
+    const record = this.records.get(interactionId)
+    if (record === undefined || waitMs <= 0) return
+    this.disarmDeadline(interactionId)
+    this.deadlines.set(interactionId, setTimeout(() => {
+      this.deadlines.delete(interactionId)
+      if (!this.records.has(interactionId)) return
+      this.settle(record, { kind: 'approval', outcome: 'rejected' })
+    }, waitMs))
+  }
+
+  /** Stop the bounded wait: the request was answered, refused, or withdrawn. */
+  disarmDeadline(interactionId: string): void {
+    const timer = this.deadlines.get(interactionId)
+    if (timer === undefined) return
+    clearTimeout(timer)
+    this.deadlines.delete(interactionId)
   }
 
   /** Mark one request as the reader's: the Leader cannot grant it. */
@@ -211,6 +250,7 @@ export class TeamInteractionBridge {
       }
       const answers = normalizeQuestionAnswers(record.questions, response.answers)
       this.records.delete(record.id)
+      this.disarmDeadline(record.id)
       this.notifyChange(sessionId)
       record.settle({ answers })
       return
@@ -219,6 +259,7 @@ export class TeamInteractionBridge {
       throw new AgentTeamError('INTERACTION_INVALID', '交互响应类型与待处理请求不匹配')
     }
     this.records.delete(record.id)
+    this.disarmDeadline(record.id)
     this.notifyChange(sessionId)
     record.settle(response.outcome)
   }
@@ -228,6 +269,8 @@ export class TeamInteractionBridge {
       this.cancel(record, new AgentTeamError('INTERACTION_NOT_FOUND', 'dsh-squad 已关闭'))
     }
     this.records.clear()
+    for (const timer of this.deadlines.values()) clearTimeout(timer)
+    this.deadlines.clear()
   }
 
   private askQuestion(
@@ -300,6 +343,7 @@ export class TeamInteractionBridge {
 
   private cancel(record: PendingInteractionRecord, error: unknown): void {
     if (!this.records.delete(record.id)) return
+    this.disarmDeadline(record.id)
     this.notifyChange(record.sessionId)
     record.cancel(error)
   }

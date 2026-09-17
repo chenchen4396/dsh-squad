@@ -117,3 +117,25 @@ describe('TaskFlowChart rendering', () => {
     expect(html).toContain('0/1 已完成')
   })
 })
+
+describe('the archive draws the same cards as the chart', () => {
+  it('gives an archived task a badge, a title and a state, not a bare row', () => {
+    const html = renderToStaticMarkup(createElement(TaskFlowChart, {
+      tasks: [
+        task('done', '已经完成的孤立任务', { status: 'completed', ownerSlotIds: ['se'] }),
+        task('running', '正在做的事', { status: 'running', ownerSlotIds: ['tse'] }),
+      ],
+      members: MEMBERS,
+    }))
+
+    // One card per task wherever it sits: two cards, two badges.
+    expect([...html.matchAll(/class="_taskFlowCard/g)]).toHaveLength(2)
+    expect([...html.matchAll(/class="_taskFlowBadge_/g)]).toHaveLength(2)
+    // The archived card carries its own words, not a single-line summary.
+    expect(html).toContain('已经完成的孤立任务')
+    expect(html).toContain('completed')
+    expect(html).toContain('SE')
+    // The finished task is not in the chart, so it draws no chart arrows.
+    expect([...html.matchAll(/marker-end/g)]).toHaveLength(0)
+  })
+})

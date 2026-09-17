@@ -1,7 +1,7 @@
 import { useId, useState } from 'react'
 import type { TeamTask } from '../../domain/types.js'
 import { buildTaskGraph, type TaskGraphNode } from '../task-graph.js'
-import { FLOW_NODE, layoutTaskRegions } from '../task-flow.js'
+import { FLOW_NODE, layoutTaskRegions, type TaskFlowItem } from '../task-flow.js'
 import css from '../AgentTeam.module.css'
 
 const STATE_LABELS: Readonly<Record<TaskGraphNode['state'], string>> = {
@@ -13,16 +13,7 @@ const STATE_LABELS: Readonly<Record<TaskGraphNode['state'], string>> = {
   cancelled: '已取消',
 }
 
-/** Legend order: the states a reader most needs to tell apart come first. */
-const LEGEND: TaskGraphNode['state'][] = ['done', 'running', 'ready', 'blocked', 'failed', 'cancelled']
-
-/** What the two arrow styles mean, in the order they are explained. */
-const EDGE_LEGEND: Array<{ className: string; label: string }> = [
-  { className: 'taskFlowLegendRule', label: '依赖已满足' },
-  { className: 'taskFlowLegendBlocked', label: '依赖未完成' },
-]
-
-/** State names as the badge spells them, matching the reference chart. */
+/** State names as the badge spells them, following the chart this is drawn from. */
 const BADGE_LABELS: Readonly<Record<TaskGraphNode['state'], string>> = {
   done: 'completed',
   running: 'in progress',
@@ -32,21 +23,28 @@ const BADGE_LABELS: Readonly<Record<TaskGraphNode['state'], string>> = {
   cancelled: 'cancelled',
 }
 
+/** Legend order: the states a reader most needs to tell apart come first. */
+const LEGEND: TaskGraphNode['state'][] = ['done', 'running', 'ready', 'blocked', 'failed', 'cancelled']
+
+/** What the two arrow styles mean, in the order they are explained. */
+const EDGE_LEGEND: Array<{ className: string; label: string }> = [
+  { className: 'taskFlowLegendRule', label: '依赖已满足' },
+  { className: 'taskFlowLegendBlocked', label: '依赖未完成' },
+]
+
 /** Roughly how many characters fit on one card, at these sizes. */
 const TITLE_BUDGET = 12
 const SUBTITLE_BUDGET = 16
-const ARCHIVE_BUDGET = 11
 
 /**
- * The task board as two halves.
+ * The 团队 view's task chart.
  *
- * The left half is the work still moving, drawn as a flow chart: the leftmost
- * column is where it starts, branches that can run at once stack in one column,
- * and they merge where their consumer sits. The right half is the archive of
- * everything finished — those tasks have left the board, so drawing them in the
- * chart would only stretch it sideways.
+ * Both halves are the same cards: the left draws the work in flight as a graph,
+ * the right lists what has finished. They are kept identical on purpose — a
+ * name, its state and who holds it read the same wherever the task sits, so
+ * nothing has to be re-learnt when a task moves from one side to the other.
  *
- * The caller passes one conversation's tasks, so a board never mixes sessions.
+ * The caller passes one conversation's tasks, so a chart never mixes sessions.
  */
 export function TaskFlowChart({
   tasks,
@@ -112,8 +110,6 @@ export function TaskFlowChart({
                   <svg
                     className={css.taskFlowSvg}
                     viewBox={`0 0 ${chart.width} ${chart.height}`}
-                    width={chart.width}
-                    height={chart.height}
                     role="img"
                     aria-label={`进行中的任务流程图，共 ${chart.items.length} 个任务`}
                   >
@@ -144,81 +140,19 @@ export function TaskFlowChart({
                         />
                       )
                     })}
-                    {chart.items.map(item => {
-                      const node = details.get(item.id)!
-                      const left = item.x - FLOW_NODE.width / 2
-                      const top = item.y - FLOW_NODE.height / 2
-                      return (
-                        <g
-                          key={item.id}
-                          className={css.taskFlowNode}
-                          data-state={node.state}
-                          data-selected={item.id === selectedId ? 'true' : undefined}
-                          role="button"
-                          tabIndex={0}
-                          aria-label={`${item.title}，${STATE_LABELS[node.state]}`}
-                          onClick={() => { pick(item.id) }}
-                          onKeyDown={event => {
-                            if (event.key !== 'Enter' && event.key !== ' ') return
-                            event.preventDefault()
-                            pick(item.id)
-                          }}
-                        >
-                          <rect
-                            className={css.taskFlowHalo}
-                            x={left - 4}
-                            y={top - 4}
-                            width={FLOW_NODE.width + 8}
-                            height={FLOW_NODE.height + 8}
-                            rx={FLOW_NODE.radius + 4}
-                          />
-                          <rect
-                            className={css.taskFlowCard}
-                            x={left}
-                            y={top}
-                            width={FLOW_NODE.width}
-                            height={FLOW_NODE.height}
-                            rx={FLOW_NODE.radius}
-                          />
-                          <rect
-                            className={css.taskFlowAccent}
-                            x={left}
-                            y={top + 10}
-                            width={4}
-                            height={FLOW_NODE.height - 20}
-                            rx={2}
-                          />
-                          <rect
-                            className={css.taskFlowBadge}
-                            x={left + 14}
-                            y={top + 8}
-                            width={badgeWidth(BADGE_LABELS[node.state])}
-                            height={15}
-                            rx={7.5}
-                          />
-                          <text
-                            className={css.taskFlowBadgeText}
-                            x={left + 14 + badgeWidth(BADGE_LABELS[node.state]) / 2}
-                            y={top + 19}
-                            textAnchor="middle"
-                          >
-                            {BADGE_LABELS[node.state]}
-                          </text>
-                          <text className={css.taskFlowLabel} x={left + 14} y={top + 39}>
-                            {truncate(item.title, TITLE_BUDGET)}
-                          </text>
-                          <text className={css.taskFlowSubtitle} x={left + 14} y={top + 55}>
-                            {truncate(item.subtitle, SUBTITLE_BUDGET)}
-                          </text>
-                          <title>{`${item.title}｜${STATE_LABELS[node.state]}｜${item.subtitle}`}</title>
-                        </g>
-                      )
-                    })}
+                    {chart.items.map(item => (
+                      <TaskCard
+                        key={item.id}
+                        item={item}
+                        selected={item.id === selectedId}
+                        onPick={pick}
+                      />
+                    ))}
                   </svg>
                 </div>
               )}
         </section>
-        {/* The small half: what has left the board, collapsed by default. */}
+        {/* The small half: what has left the board, drawn as the same cards. */}
         <aside className={css.taskFlowArchive}>
           <details className={css.taskFlowArchiveDetails} open>
             <summary className={css.taskFlowSectionHead}>
@@ -230,19 +164,12 @@ export function TaskFlowChart({
               : (
                   <ul className={css.taskFlowArchiveList}>
                     {regions.archived.map(item => (
-                      <li key={item.id}>
-                        <button
-                          type="button"
-                          className={css.taskFlowArchiveItem}
-                          data-selected={item.id === selectedId ? 'true' : undefined}
-                          title={`${item.title}${item.caption.length === 0 ? '' : `｜${item.caption}`}`}
-                          onClick={() => { pick(item.id) }}
-                        >
-                          <span className={css.taskFlowArchiveTick} aria-hidden="true">✓</span>
-                          <span className={css.taskFlowArchiveLabel}>
-                            {truncate(item.title, ARCHIVE_BUDGET)}
-                          </span>
-                        </button>
+                      <li key={item.id} className={css.taskFlowArchiveCard}>
+                        <TaskCard
+                          item={item}
+                          selected={item.id === selectedId}
+                          onPick={pick}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -256,8 +183,86 @@ export function TaskFlowChart({
 }
 
 /**
+ * One task, drawn the same way wherever it appears.
+ *
+ * A card carries its state as a badge, its name, and the one fact a reader asks
+ * next — who holds it, or what it is still waiting for.
+ */
+function TaskCard({
+  item,
+  selected,
+  onPick,
+}: {
+  item: TaskFlowItem
+  selected: boolean
+  onPick: (id: string) => void
+}): JSX.Element {
+  const left = item.x - FLOW_NODE.width / 2
+  const top = item.y - FLOW_NODE.height / 2
+  const badge = BADGE_LABELS[item.state]
+  return (
+    <g
+      className={css.taskFlowNode}
+      data-state={item.state}
+      data-selected={selected ? 'true' : undefined}
+      transform={`translate(${left} ${top})`}
+      role="button"
+      tabIndex={0}
+      aria-label={`${item.title}，${STATE_LABELS[item.state]}`}
+      onClick={() => { onPick(item.id) }}
+      onKeyDown={event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        onPick(item.id)
+      }}
+    >
+      <title>{`${item.title}｜${STATE_LABELS[item.state]}｜${item.subtitle}`}</title>
+      <rect
+        className={css.taskFlowHalo}
+        x={-4}
+        y={-4}
+        width={FLOW_NODE.width + 8}
+        height={FLOW_NODE.height + 8}
+        rx={FLOW_NODE.radius + 4}
+      />
+      <rect
+        className={css.taskFlowCard}
+        width={FLOW_NODE.width}
+        height={FLOW_NODE.height}
+        rx={FLOW_NODE.radius}
+      />
+      <rect
+        className={css.taskFlowAccent}
+        x={0}
+        y={10}
+        width={4}
+        height={FLOW_NODE.height - 20}
+        rx={2}
+      />
+      <rect
+        className={css.taskFlowBadge}
+        x={14}
+        y={8}
+        width={badgeWidth(badge)}
+        height={15}
+        rx={7.5}
+      />
+      <text className={css.taskFlowBadgeText} x={14 + badgeWidth(badge) / 2} y={19} textAnchor="middle">
+        {badge}
+      </text>
+      <text className={css.taskFlowLabel} x={14} y={39}>
+        {truncate(item.title, TITLE_BUDGET)}
+      </text>
+      <text className={css.taskFlowSubtitle} x={14} y={55}>
+        {truncate(item.subtitle, SUBTITLE_BUDGET)}
+      </text>
+    </g>
+  )
+}
+
+/**
  * What a click reveals: the whole task, its owner, and both dependency
- * directions. Nothing is lost by keeping the node itself small.
+ * directions. Nothing is lost by keeping the card itself small.
  */
 function TaskDetail({
   node,

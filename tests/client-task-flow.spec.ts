@@ -308,3 +308,89 @@ describe('finished steps the chart keeps', () => {
     expect([...keptInFlow(buildTaskGraph([task('a', { status: 'running' })]).nodes)]).toEqual([])
   })
 })
+
+describe('readability: related work lines up', () => {
+  it('keeps an independent chain in one column instead of letting it drift', () => {
+    // A→B and C→D: two chains that never touch must not cross each other.
+    const chart = chartOf([
+      task('a'),
+      task('b', { dependencyIds: ['a'] }),
+      task('c'),
+      task('d', { dependencyIds: ['c'] }),
+    ])
+    const at = (id: string) => chart.items.find(item => item.id === id)!
+    expect(at('b').x).toBe(at('a').x)
+    expect(at('d').x).toBe(at('c').x)
+    // The level is ordered so the arrows do not cross.
+    expect(at('b').x).toBeLessThan(at('d').x)
+  })
+
+  it('lines each dependent up under its own parent, interleaved or not', () => {
+    // Two chains, listed in the order a board records them: each root before
+    // its step. Neither may drift under the other.
+    const chart = chartOf([
+      task('left'),
+      task('right'),
+      task('after-left', { dependencyIds: ['left'] }),
+      task('after-right', { dependencyIds: ['right'] }),
+    ])
+    const at = (id: string) => chart.items.find(item => item.id === id)!
+    expect(at('after-left').x).toBe(at('left').x)
+    expect(at('after-right').x).toBe(at('right').x)
+  })
+
+  it('is stable: the same board lays out the same way twice', () => {
+    const board = [
+      task('a'), task('b', { dependencyIds: ['a'] }),
+      task('c'), task('d', { dependencyIds: ['a', 'c'] }),
+    ]
+    const first = chartOf(board).items.map(item => `${item.id}@${item.x},${item.y}`)
+    const second = chartOf(board).items.map(item => `${item.id}@${item.x},${item.y}`)
+    expect(second).toEqual(first)
+  })
+})
+
+describe('plan C: a chain is kept whole, finished or not', () => {
+  it('keeps a fully finished chain instead of archiving all of it', () => {
+    const chart = layoutTaskRegions(buildTaskGraph([
+      task('a', { status: 'completed', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      task('b', { status: 'completed', dependencyIds: ['a'], updatedAt: '2026-01-02T00:00:00.000Z' }),
+      task('c', { status: 'completed', dependencyIds: ['b'], updatedAt: '2026-01-03T00:00:00.000Z' }),
+    ]))
+
+    // Nothing is unfinished, yet the chain is what the reader came to see.
+    expect(chart.active.items.map(item => item.id)).toEqual(['a', 'b', 'c'])
+    expect(chart.archived).toEqual([])
+    expect(chart.active.edges).toHaveLength(2)
+  })
+
+  it('keeps the most recent links of a finished chain and archives the rest', () => {
+    const chart = layoutTaskRegions(buildTaskGraph([
+      task('s1', { status: 'completed', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      task('s2', { status: 'completed', dependencyIds: ['s1'], updatedAt: '2026-01-02T00:00:00.000Z' }),
+      task('s3', { status: 'completed', dependencyIds: ['s2'], updatedAt: '2026-01-03T00:00:00.000Z' }),
+      task('s4', { status: 'completed', dependencyIds: ['s3'], updatedAt: '2026-01-04T00:00:00.000Z' }),
+    ]))
+
+    expect(chart.active.items.map(item => item.id).sort()).toEqual(['s2', 's3', 's4'])
+    expect(chart.archived.map(item => item.id)).toEqual(['s1'])
+  })
+
+  it('archives a finished task whose prerequisite is not on the board', () => {
+    // A loose end rather than a chain: there is nothing beside it to read.
+    const chart = layoutTaskRegions(buildTaskGraph([
+      task('orphan', { status: 'completed', dependencyIds: ['gone'] }),
+    ]))
+    expect(chart.active.items).toEqual([])
+    expect(chart.archived.map(item => item.id)).toEqual(['orphan'])
+  })
+
+  it('still counts a kept finished task once, and only once', () => {
+    const chart = layoutTaskRegions(buildTaskGraph([
+      task('a', { status: 'completed' }),
+      task('b', { status: 'completed', dependencyIds: ['a'] }),
+    ]))
+    const drawn = new Set(chart.active.items.map(item => item.id))
+    for (const archived of chart.archived) expect(drawn.has(archived.id)).toBe(false)
+  })
+})

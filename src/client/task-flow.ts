@@ -12,6 +12,8 @@ export interface TaskFlowItem {
   title: string
   /** Owner names already resolved for display, ready to draw. */
   caption: string
+  /** Members on the task, so the archive can build the same card. */
+  ownerSlotIds: string[]
   /**
    * The node's second line: who is on it, or what it is still waiting for.
    * A blocked card says why it cannot move yet, which is the one thing the
@@ -97,8 +99,8 @@ export function layoutTaskFlow(
   const present = new Set(graph.nodes.map(node => node.id))
   const level = assignLevels(graph.nodes, present)
 
-  // Group by level, keeping the topological order within each column so a
-  // reader still follows the board's own sequence.
+  // Group by level in dependency order, then align each level under what feeds
+  // it so a reader can follow a chain straight down the screen.
   const columns = new Map<number, TaskGraphNode[]>()
   for (const node of graph.nodes) {
     const rank = level.get(node.id) ?? 0
@@ -109,6 +111,7 @@ export function layoutTaskFlow(
 
   const { width: nodeWidth, height: nodeHeight, gapX, gapY, padding, maxPerRow, gapRowY } = FLOW_NODE
   const columnsByRank = [...columns.keys()].sort((left, right) => left - right)
+  alignColumns(columns, columnsByRank, graph.nodes, present)
   // Every level wraps at the same width, so the chart has one column count and
   // a merge still sits between the branches that feed it.
   const widest = Math.min(
@@ -135,6 +138,7 @@ export function layoutTaskFlow(
         id: node.id,
         title: node.title,
         caption: ownerCaption(node, members),
+        ownerSlotIds: [...node.ownerSlotIds],
         subtitle: subtitleOf(node, members, titles),
         state: node.state,
         level: rank,
@@ -170,6 +174,61 @@ export function layoutTaskFlow(
     height: chartHeight + padding * 2,
     items,
     edges,
+  }
+}
+
+/**
+ * Order every level so a node sits under what feeds it.
+ *
+ * Dependency order alone says nothing about position: three tasks that feed one
+ * dependent can come out in any sequence, and the arrows then cross the ones
+ * beside them. A node that follows something on this board is therefore placed
+ * above what it feeds — the average position of its dependencies, the usual
+ * barycentre — while a node with nothing to follow keeps the place dependency
+ * order gave it, which is the board's own sequence. Levels are processed top
+ * down, so every dependency already has a position to follow.
+ */
+function alignColumns(
+  columns: Map<number, TaskGraphNode[]>,
+  ranks: readonly number[],
+  nodes: readonly TaskGraphNode[],
+  present: ReadonlySet<string>,
+): void {
+  const upstream = new Map(nodes.map(node => [
+    node.id,
+    node.dependsOn.concat(node.waitingOn).filter(id => present.has(id)),
+  ]))
+  const position = new Map<string, number>()
+  for (const rank of ranks) {
+    const column = columns.get(rank)!
+    // Where each node started, so one with nothing to follow keeps its place.
+    const original = new Map(column.map((node, index) => [node.id, index]))
+    const barycentre = new Map<string, number>()
+    column.forEach(node => {
+      if (position.has(node.id)) return
+      const ranked = (upstream.get(node.id) ?? [])
+        .map(id => position.get(id))
+        .filter((value): value is number => value !== undefined)
+      if (ranked.length === 0) return
+      barycentre.set(node.id, ranked.reduce((sum, value) => sum + value, 0) / ranked.length)
+    })
+    for (const [id, value] of barycentre) position.set(id, value)
+    column.sort((left, right) => {
+      const a = barycentre.get(left.id)
+      const b = barycentre.get(right.id)
+      if (a === undefined && b === undefined) return original.get(left.id)! - original.get(right.id)!
+      if (a === undefined) return 1
+      if (b === undefined) return -1
+      return a - b
+    })
+    // A node that follows nothing is placed after the ones that do, so the next
+    // level still has a position for every dependency it can follow.
+    let fallback = column.length
+    for (const node of column) {
+      if (position.has(node.id)) continue
+      position.set(node.id, fallback)
+      fallback += 1
+    }
   }
 }
 
@@ -287,40 +346,41 @@ export function taskFlowRegion(state: TeamTask['status']): TaskFlowRegion {
 }
 
 /**
- * The finished tasks the chart keeps, because the work they explain is below
- * them.
+ * The finished tasks the chart keeps, because they are part of a chain.
  *
- * A finished task is kept while an unfinished task that sits below it — the
- * work it unblocks — is still drawn, and while it is among the most recent to
- * finish. Everything else has nothing left to explain.
+ * A chain is the thing worth reading: `a → b → c` tells the reader what led to
+ * what, and it says that whether or not the work has finished. A finished step
+ * is therefore kept while it stands in one — while something on this board is
+ * its prerequisite or its dependent — and while it is among the most recent to
+ * finish. Everything else has nothing left to explain and archives.
+ *
+ * Only the board's own relationships count. A finished task whose prerequisite
+ * is not on the board is a step with a loose end, not a chain.
  */
 export function keptInFlow(
   nodes: readonly TaskGraphNode[],
   keep = KEEP_RECENT_FINISHED,
 ): Set<string> {
+  const byId = new Map(nodes.map(node => [node.id, node]))
   const finished = new Set(
     nodes.filter(node => taskFlowRegion(node.status) === 'archived').map(node => node.id),
   )
-  const unfinished = nodes.filter(node => !finished.has(node.id))
-
-  // Walk down from each unfinished task: everything it waits on, directly or
-  // not, is a step in a chain the reader is following.
-  const required = new Set<string>()
-  const pending = unfinished.flatMap(node => node.dependsOn.concat(node.waitingOn))
-  while (pending.length > 0) {
-    const id = pending.pop()!
-    if (!finished.has(id) || required.has(id)) continue
-    required.add(id)
-    const node = nodes.find(candidate => candidate.id === id)
-    if (node !== undefined) pending.push(...node.dependsOn, ...node.waitingOn)
+  // Every task that is on the board and waits on something, or is waited on.
+  const connected = new Set<string>()
+  for (const node of nodes) {
+    const prerequisites = node.dependsOn.concat(node.waitingOn).filter(id => byId.has(id))
+    if (prerequisites.length === 0) continue
+    connected.add(node.id)
+    for (const id of prerequisites) connected.add(id)
   }
 
   // Newest first, so a long chain keeps its most recent links rather than its
   // oldest. Ids break ties so the chart does not reshuffle between renders.
-  const recent = [...required]
+  const recent = [...finished]
+    .filter(id => connected.has(id))
     .sort((left, right) => {
-      const a = nodes.find(node => node.id === left)!
-      const b = nodes.find(node => node.id === right)!
+      const a = byId.get(left)!
+      const b = byId.get(right)!
       return b.updatedAt.localeCompare(a.updatedAt) || left.localeCompare(right)
     })
     .slice(0, keep)
@@ -357,6 +417,7 @@ export function layoutTaskRegions(
       id: node.id,
       title: node.title,
       caption: ownerCaption(node, members),
+      ownerSlotIds: [...node.ownerSlotIds],
       subtitle: ownerCaption(node, members),
       state: node.state,
       level: 0,

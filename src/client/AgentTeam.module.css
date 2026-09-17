@@ -3799,50 +3799,34 @@ textarea.input {
 .taskFlowArchiveList {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
   margin: 8px 0 0;
   padding: 0;
   list-style: none;
 }
 
-.taskFlowArchiveItem {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  width: 100%;
-  padding: 5px 9px;
-  border: 1px solid var(--dsw-alias-border-l1);
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-layer-1);
-  color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-family);
-  font-size: 11px;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+/*
+ * The archive draws the same cards as the chart, scaled to the narrower column
+ * rather than re-drawn smaller: one card definition means a task reads
+ * identically on either side, and the sidebar can afford the width the cards
+ * do not use anyway.
+ */
+.taskFlowArchiveCard {
+  display: block;
 }
 
-.taskFlowArchiveItem:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+.taskFlowArchiveCard .taskFlowSvg,
+.taskFlowArchiveCard .taskFlowNode {
+  transform-origin: 0 0;
 }
 
-.taskFlowArchiveItem[data-selected='true'] {
-  border-color: var(--dsw-alias-brand-primary);
-  color: var(--dsw-alias-label-primary);
+.taskFlowArchiveCard .taskFlowNode {
+  transform-box: fill-box;
 }
 
-.taskFlowArchiveTick {
-  flex: none;
-  color: var(--dsw-alias-state-success-primary);
-  font-size: 11px;
-}
-
-.taskFlowArchiveLabel {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.taskFlowArchiveCard svg {
+  display: block;
+  overflow: visible;
 }
 
 .taskFlowDetail {

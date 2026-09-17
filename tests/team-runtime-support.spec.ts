@@ -49,6 +49,39 @@ describe('team runtime support', () => {
     expect(memberPrompt(team, coder, 'Implement.')).not.toContain(TASK_AUTHORING_SPEC)
   })
 
+  it('tells the leader it arranges work rather than carrying it out', () => {
+    const leader = member('leader-slot', 'Code Leader', 'leader')
+    const coder = member('coder-slot', 'Coder', 'member')
+    const team = {
+      id: 'team-1',
+      name: 'Compiler Team',
+      leaderSlotId: leader.id,
+      members: { [leader.id]: leader, [coder.id]: coder },
+    } as unknown as TeamAggregate
+
+    const prompt = memberPrompt(team, leader, 'Coordinate.')
+    expect(prompt).toContain('You arrange the work; you do not carry it out')
+    expect(prompt).toContain('A task is the only way work reaches a member')
+    expect(prompt).toContain('Close the loop on what you assign')
+    // The role line still tells it the truth about ownership.
+    expect(prompt).toContain('Your role is leader')
+    // A member is never told it arranges anything.
+    expect(memberPrompt(team, coder, 'Implement.')).not.toContain('You arrange the work')
+  })
+
+  it('says in the roster that work travels as tasks, not as messages', () => {
+    const leader = member('leader-slot', 'Code Leader', 'leader')
+    const team = {
+      id: 'team-1',
+      name: 'Compiler Team',
+      leaderSlotId: leader.id,
+      members: { [leader.id]: leader },
+    } as unknown as TeamAggregate
+    const prompt = rosterPrompt(team)
+    expect(prompt).toContain('Work travels as tasks')
+    expect(prompt).toContain('for talking, not for handing out work')
+  })
+
   it('keeps the spec in the order the reader reads it', () => {
     const order = ['前置依赖：', '任务描述：', '任务责任人：', '输出：', '输入：', '验收：']
       .map(label => TASK_AUTHORING_SPEC.indexOf(label))

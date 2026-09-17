@@ -137,5 +137,10 @@ describe('the archive draws the same cards as the chart', () => {
     expect(html).toContain('SE')
     // The finished task is not in the chart, so it draws no chart arrows.
     expect([...html.matchAll(/marker-end/g)]).toHaveLength(0)
+    // Both cards are drawn at the chart's own card size: the archive must not
+    // stretch them to fill its column and come out larger than the chart's.
+    for (const card of html.matchAll(/taskFlowCard[^>]*width="(\d+)" height="(\d+)"/g)) {
+      expect([card[1], card[2]]).toEqual(['150', '58'])
+    }
   })
 })

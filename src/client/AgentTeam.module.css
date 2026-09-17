@@ -3815,16 +3815,12 @@ textarea.input {
   display: block;
 }
 
-.taskFlowArchiveCard .taskFlowSvg,
-.taskFlowArchiveCard .taskFlowNode {
-  transform-origin: 0 0;
-}
-
-.taskFlowArchiveCard .taskFlowNode {
-  transform-box: fill-box;
-}
-
-.taskFlowArchiveCard svg {
+/*
+ * The archive draws the chart's own card at its own size. A wrapping element
+ * with no width would let the drawing stretch to fill the column and come out
+ * larger than the identical card beside it.
+ */
+.taskFlowArchiveCard .taskFlowSvg {
   display: block;
   overflow: visible;
 }

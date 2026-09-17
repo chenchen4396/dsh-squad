@@ -165,11 +165,20 @@ export function TaskFlowChart({
                   <ul className={css.taskFlowArchiveList}>
                     {regions.archived.map(item => (
                       <li key={item.id} className={css.taskFlowArchiveCard}>
-                        <TaskCard
-                          item={item}
-                          selected={item.id === selectedId}
-                          onPick={pick}
-                        />
+                        <svg
+                          className={css.taskFlowSvg}
+                          viewBox={`0 0 ${FLOW_NODE.width} ${FLOW_NODE.height}`}
+                          width={FLOW_NODE.width}
+                          height={FLOW_NODE.height}
+                          role="img"
+                          aria-label={`${item.title}，${STATE_LABELS[item.state]}`}
+                        >
+                          <TaskCard
+                            item={{ ...item, x: FLOW_NODE.width / 2, y: FLOW_NODE.height / 2 }}
+                            selected={item.id === selectedId}
+                            onPick={pick}
+                          />
+                        </svg>
                       </li>
                     ))}
                   </ul>

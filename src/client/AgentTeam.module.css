@@ -3576,19 +3576,6 @@ textarea.input {
 }
 
 /* The left half is the work; the right half is the archive beside it. */
-/*
- * The chart and its detail side by side. With many tasks the chart is taller
- * than the panel, so a detail stacked underneath it sits below the fold and a
- * click appears to do nothing; beside it, the detail is where the reader is
- * already looking.
- */
-.taskFlowMain {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  min-width: 0;
-}
-
 .taskFlowSplit {
   display: flex;
   flex: 1 1 auto;
@@ -3652,6 +3639,10 @@ textarea.input {
 
 .taskFlowCanvas {
   overflow: auto;
+  /* The drawing is centred in the half it owns, so a wide panel centres the
+     board instead of leaving it pinned to the left edge. */
+  display: flex;
+  justify-content: center;
   min-width: 0;
 }
 
@@ -3841,9 +3832,6 @@ textarea.input {
 .taskFlowDetail {
   display: flex;
   flex-direction: column;
-  /* Beside the chart on a wide panel: a detail under a tall chart is a scroll
-     away from the card that opened it. A narrow panel stacks it instead. */
-  flex: 0 0 300px;
   gap: 7px;
   padding: 10px 13px;
   border: 1px solid var(--dsw-alias-border-l1);
@@ -4019,12 +4007,73 @@ textarea.input {
   }
 }
 
-@media (max-width: 900px) {
-  .taskFlowMain {
-    flex-wrap: wrap;
-  }
+/* The task detail opens over the chart rather than taking a column from it. */
+.taskDetailBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 32%);
+}
 
-  .taskFlowDetail {
-    flex: 1 1 100%;
-  }
+.taskDetailDialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(560px, 100%);
+  max-height: min(78vh, 680px);
+  overflow-y: auto;
+  padding: 16px 18px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-overlay);
+  box-shadow: var(--dsw-elevation-soft);
+}
+
+.taskDetailHeader {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.taskDetailHeading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.taskDetailTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 15px;
+}
+
+.taskDetailClose {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsw-font-family);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.taskDetailClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Inside the dialog the detail is a plain block: the border belongs to it. */
+.taskDetailDialog .taskFlowDetail {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
 }

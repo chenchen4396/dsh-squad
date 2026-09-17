@@ -144,3 +144,22 @@ describe('the archive draws the same cards as the chart', () => {
     }
   })
 })
+
+describe('the board is centred, with the archive last', () => {
+  it('puts the chart first and the archive after it, and no detail until a click', () => {
+    const html = renderToStaticMarkup(createElement(TaskFlowChart, {
+      tasks: [
+        task('open', '在跑的任务', { status: 'running', ownerSlotIds: ['se'] }),
+        task('done', '已完成且无人等的任务', { status: 'completed', ownerSlotIds: ['tse'] }),
+      ],
+      members: MEMBERS,
+    }))
+
+    const chart = html.indexOf('taskFlowActive')
+    const archive = html.indexOf('taskFlowArchive')
+    expect(chart).toBeGreaterThan(-1)
+    expect(archive).toBeGreaterThan(chart)
+    // The detail is a dialog over the chart, so nothing is drawn until a click.
+    expect(html).not.toContain('taskDetailBackdrop')
+  })
+})

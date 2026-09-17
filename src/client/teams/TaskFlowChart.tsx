@@ -1,4 +1,5 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { TeamTask } from '../../domain/types.js'
 import { buildTaskGraph, type TaskGraphNode } from '../task-graph.js'
 import { FLOW_NODE, layoutTaskRegions, type TaskFlowItem } from '../task-flow.js'
@@ -96,7 +97,6 @@ export function TaskFlowChart({
           ))}
         </ul>
       </div>
-      <div className={css.taskFlowMain}>
       <div className={css.taskFlowSplit}>
         {/* The large half: everything not yet finished, in dependency order. */}
         <section className={css.taskFlowActive}>
@@ -189,10 +189,9 @@ export function TaskFlowChart({
           </details>
         </aside>
       </div>
-      {/* Beside the chart, not below it: with many tasks the chart is tall, and
-          a detail under it is a scroll away from the card that was clicked. */}
-      <TaskDetail node={selected} members={members} onPick={setSelectedId} />
-      </div>
+      {/* A dialog rather than a panel: the chart uses the width it has, and the
+          detail opens over it wherever the reader happens to be looking. */}
+      <TaskDetail node={selected} members={members} onPick={setSelectedId} onClose={() => { setSelectedId(undefined) }} />
     </div>
   )
 }
@@ -276,54 +275,84 @@ function TaskCard({
 }
 
 /**
- * What a click reveals: the whole task, its owner, and both dependency
- * directions. Nothing is lost by keeping the card itself small.
+ * What a click reveals: the whole task, its owner, its description and both
+ * dependency directions, in a dialog over the chart.
+ *
+ * The card itself stays small; everything it cannot carry is one click away.
+ * The dialog is drawn through a portal so a chart that scrolls sideways cannot
+ * clip it, and it closes on Escape, on a click outside, or on the close button.
  */
 function TaskDetail({
   node,
   members,
   onPick,
+  onClose,
 }: {
   node: TaskGraphNode | undefined
   members: Readonly<Record<string, { displayName: string }>>
   onPick: (id: string) => void
+  onClose: () => void
 }): JSX.Element | null {
-  if (node === undefined) return null
+  useEffect(() => {
+    if (node === undefined) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [node, onClose])
+
+  if (node === undefined || typeof document === 'undefined') return null
   const owners = node.ownerSlotIds.map(slotId => members[slotId]?.displayName ?? slotId)
-  return (
-    <div className={css.taskFlowDetail} data-state={node.state}>
-      <div className={css.taskFlowDetailHead}>
-        <strong className={css.taskFlowDetailTitle}>{node.title}</strong>
-        <span className={css.taskFlowDetailState} data-state={node.state}>
-          {STATE_LABELS[node.state]}
-        </span>
-      </div>
-      <dl className={css.taskFlowDetailFacts}>
-        <dt>负责人</dt>
-        <dd>{owners.length === 0 ? '未分配' : owners.join('、')}</dd>
-        <dt>等待</dt>
-        <dd>{node.waitingOn.length === 0 ? '无（可开始）' : node.waitingOn.join('、')}</dd>
-        <dt>完成后解锁</dt>
-        <dd>{node.blocks.length === 0 ? '无' : node.blocks.join('、')}</dd>
-      </dl>
-      {node.description.length > 0 && (
-        <p className={css.taskFlowDetailDescription}>{node.description}</p>
-      )}
-      {(node.waitingOn.length > 0 || node.blocks.length > 0) && (
-        <div className={css.taskFlowDetailLinks}>
-          {[...node.waitingOn, ...node.blocks].map(id => (
-            <button
-              key={id}
-              type="button"
-              className={css.taskFlowDetailLink}
-              onClick={() => { onPick(id) }}
-            >
-              {id.slice(0, 8)}
-            </button>
-          ))}
+  return createPortal(
+    <div className={css.taskDetailBackdrop} onClick={onClose} role="presentation">
+      <div
+        className={css.taskDetailDialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label={node.title}
+        onClick={event => { event.stopPropagation() }}
+      >
+        <header className={css.taskDetailHeader}>
+          <div className={css.taskDetailHeading}>
+            <strong className={css.taskDetailTitle}>{node.title}</strong>
+            <span className={css.taskFlowDetailState} data-state={node.state}>
+              {STATE_LABELS[node.state]}
+              {owners.length === 0 ? ' · 未分配' : ` · ${owners.join('、')}`}
+            </span>
+          </div>
+          <button type="button" className={css.taskDetailClose} onClick={onClose} aria-label="关闭">
+            ✕
+          </button>
+        </header>
+        <div className={css.taskFlowDetail} data-state={node.state}>
+          <dl className={css.taskFlowDetailFacts}>
+            <dt>等待</dt>
+            <dd>{node.waitingOn.length === 0 ? '无（可开始）' : node.waitingOn.join('、')}</dd>
+            <dt>完成后解锁</dt>
+            <dd>{node.blocks.length === 0 ? '无' : node.blocks.join('、')}</dd>
+          </dl>
+          {node.description.length > 0 && (
+            <p className={css.taskFlowDetailDescription}>{node.description}</p>
+          )}
+          {(node.waitingOn.length > 0 || node.blocks.length > 0) && (
+            <div className={css.taskFlowDetailLinks}>
+              {[...node.waitingOn, ...node.blocks].map(id => (
+                <button
+                  key={id}
+                  type="button"
+                  className={css.taskFlowDetailLink}
+                  onClick={() => { onPick(id) }}
+                >
+                  {id.slice(0, 8)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 

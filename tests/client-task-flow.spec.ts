@@ -10,8 +10,10 @@ import type { TeamTask } from '../src/domain/types.js'
 
 /**
  * The chart is the shape of the work, so the layout is what has to be right:
- * parallel branches stack in one column and merge where their consumer sits,
- * and an arrow always runs left to right — never from a task to its dependency.
+ * parallel branches sit side by side on one level and merge where their
+ * consumer sits, and an arrow always runs downwards — never from a task back
+ * to its dependency. Depth runs down the screen because that is the axis the
+ * panel already scrolls; width is what it cannot spare.
  */
 function task(id: string, overrides: Partial<TeamTask> = {}): TeamTask {
   return {
@@ -44,28 +46,28 @@ describe('layoutTaskFlow', () => {
     ])
 
     const at = (id: string) => chart.items.find(item => item.id === id)!
-    // Depth 0 → 1 → 2 → 3 → 4 reads left to right.
+    // Depth 0 → 1 → 2 → 3 reads top to bottom.
     expect(at('parse').level).toBe(0)
     expect(at('transcode').level).toBe(1)
     expect(at('thumbnail').level).toBe(1)
     expect(at('watermark').level).toBe(2)
     expect(at('publish').level).toBe(3)
 
-    // The two branches share a column and do not overlap vertically.
-    expect(at('transcode').x).toBe(at('thumbnail').x)
-    expect(at('transcode').y).not.toBe(at('thumbnail').y)
+    // The two branches share a level and do not overlap sideways.
+    expect(at('transcode').y).toBe(at('thumbnail').y)
+    expect(at('transcode').x).not.toBe(at('thumbnail').x)
 
-    // Every arrow runs left to right: the dependency is always further left.
+    // Every arrow runs downwards: the dependency is always further up.
     for (const edge of chart.edges) {
       const from = at(edge.from)
       const to = at(edge.to)
-      expect(from.x).toBeLessThan(to.x)
+      expect(from.y).toBeLessThan(to.y)
     }
     // parse → 2 branches, 2 branches → watermark, watermark → publish.
     expect(chart.edges).toHaveLength(5)
   })
 
-  it('places a task right of every one of its dependencies, not just one', () => {
+  it('places a task below every one of its dependencies, not just one', () => {
     const chart = chartOf([
       task('a'),
       task('b', { dependencyIds: ['a'] }),
@@ -76,8 +78,8 @@ describe('layoutTaskFlow', () => {
 
     const at = (id: string) => chart.items.find(item => item.id === id)!
     expect(at('d').level).toBe(3)
-    expect(at('d').x).toBeGreaterThan(at('c').x)
-    expect(at('d').x).toBeGreaterThan(at('a').x)
+    expect(at('d').y).toBeGreaterThan(at('c').y)
+    expect(at('d').y).toBeGreaterThan(at('a').y)
   })
 
   it('centres a merge point between the branches that feed it', () => {
@@ -91,9 +93,9 @@ describe('layoutTaskFlow', () => {
     const merge = at('merge')!
     const left = at('left')!
     const right = at('right')!
-    const middle = (left.y + right.y) / 2
-    // With no other column taller, the merge sits on the branch midpoint.
-    expect(Math.abs(merge.y - middle)).toBeLessThanOrEqual(FLOW_NODE.gapY)
+    const middle = (left.x + right.x) / 2
+    // With no other level wider, the merge sits on the branch midpoint.
+    expect(Math.abs(merge.x - middle)).toBeLessThanOrEqual(FLOW_NODE.gapX)
   })
 
   it('keeps a task waiting on something off the board one level in', () => {
@@ -122,7 +124,7 @@ describe('layoutTaskFlow', () => {
     expect(chart.items[0]!.caption).toBe('SE、ghost')
   })
 
-  it('measures the chart to fit every column and lane', () => {
+  it('measures the chart to fit every level and lane', () => {
     const chart = chartOf([
       task('a'),
       task('b', { dependencyIds: ['a'] }),
@@ -156,7 +158,7 @@ describe('layoutTaskRegions', () => {
 
   it('keeps a dependency on an archived task out of the live chart', () => {
     // The dependency is satisfied, so the arrow has done its job and the live
-    // chart must not stretch sideways to reach the archive.
+    // chart must not stretch down to reach the archive.
     const chart = layoutTaskRegions(buildTaskGraph([
       task('design', { status: 'completed' }),
       task('implement', { dependencyIds: ['design'], status: 'running' }),

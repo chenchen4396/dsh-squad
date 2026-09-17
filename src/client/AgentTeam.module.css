@@ -3643,7 +3643,14 @@ textarea.input {
 
 .taskFlowSvg {
   display: block;
-  max-width: none;
+  /*
+   * The chart is drawn at its natural size and shrunk to the panel when the
+   * panel is narrower. Letting it keep its width would push its right-hand
+   * tasks out of view, where missing work looks like work that does not exist;
+   * letting it stay full size when there is room keeps the labels crisp.
+   */
+  max-width: 100%;
+  height: auto;
 }
 
 /* The arrow carries the colour of the task it leaves, and a dashed line means

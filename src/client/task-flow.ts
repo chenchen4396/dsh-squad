@@ -43,21 +43,33 @@ export interface TaskFlowChart {
 }
 
 /**
- * Node geometry: a compact card, not a banner.
+ * Node geometry: a compact card sized for the panel, not for a page.
  *
- * The chart is read as a shape first and by label second, so a node only needs
- * room for a short title. A tight card keeps more of the graph on screen, and
- * the full text lives in the detail panel a click opens.
+ * The chart flows top to bottom, so its width is what has to fit: the members
+ * columns can leave the 团队 view narrow, and a chart that needs sideways
+ * scrolling hides its own nodes — which reads as missing work. Depth goes down
+ * the screen instead, where the panel already scrolls, and a wide node is worth
+ * the room because it is the only thing asking for width.
  */
 export const FLOW_NODE = {
-  width: 176,
-  height: 66,
+  width: 150,
+  height: 58,
   /** Corner radius, the rounded style of the board. */
   radius: 14,
-  /** Horizontal gap between one level and the next. */
-  gapX: 46,
-  /** Vertical gap between two nodes stacked in the same level. */
-  gapY: 12,
+  /** Vertical gap between one dependency level and the next. */
+  gapY: 30,
+  /** Horizontal gap between two nodes of the same level. */
+  gapX: 14,
+  /**
+   * How many nodes of one level sit side by side before the rest wrap.
+   *
+   * Parallel work is the normal case, so a level can hold more nodes than the
+   * 团队 view has width for. Wrapping keeps the chart inside the panel instead
+   * of pushing its right-hand tasks off screen, where they read as missing.
+   */
+  maxPerRow: 2,
+  /** Vertical gap between two wrapped rows of the same level. */
+  gapRowY: 14,
   /** Padding around the whole chart. */
   padding: 12,
 } as const
@@ -95,21 +107,30 @@ export function layoutTaskFlow(
     columns.set(rank, column)
   }
 
-  const { width: nodeWidth, height: nodeHeight, gapX, gapY, padding } = FLOW_NODE
+  const { width: nodeWidth, height: nodeHeight, gapX, gapY, padding, maxPerRow, gapRowY } = FLOW_NODE
   const columnsByRank = [...columns.keys()].sort((left, right) => left - right)
-  const tallest = Math.max(...columnsByRank.map(rank => columns.get(rank)!.length))
-  const chartHeight = tallest * nodeHeight + (tallest - 1) * gapY
-  const chartWidth = columnsByRank.length * nodeWidth + (columnsByRank.length - 1) * gapX
+  // Every level wraps at the same width, so the chart has one column count and
+  // a merge still sits between the branches that feed it.
+  const widest = Math.min(
+    maxPerRow,
+    Math.max(...columnsByRank.map(rank => columns.get(rank)!.length)),
+  )
+  const chartWidth = widest * nodeWidth + (widest - 1) * gapX
 
-  const items: TaskFlowItem[] = []
   const titles = new Map(graph.nodes.map(node => [node.id, node.title]))
+  const items: TaskFlowItem[] = []
+  /** Where the next level starts, so a wrapped level pushes the ones below it. */
+  let cursorY = padding
   for (const rank of columnsByRank) {
     const column = columns.get(rank)!
-    // Each column is centred against the tallest one, so a merge point sits
-    // between the branches that feed it rather than at their top.
-    const columnHeight = column.length * nodeHeight + (column.length - 1) * gapY
-    const top = (chartHeight - columnHeight) / 2
-    column.forEach((node, lane) => {
+    const rows = Math.ceil(column.length / widest)
+    column.forEach((node, index) => {
+      const row = Math.floor(index / widest)
+      const lane = index % widest
+      // The last row of a level may hold fewer nodes: centre what it holds.
+      const inRow = Math.min(widest, column.length - row * widest)
+      const rowWidth = inRow * nodeWidth + (inRow - 1) * gapX
+      const left = (chartWidth - rowWidth) / 2
       items.push({
         id: node.id,
         title: node.title,
@@ -117,12 +138,14 @@ export function layoutTaskFlow(
         subtitle: subtitleOf(node, members, titles),
         state: node.state,
         level: rank,
-        lane,
-        x: padding + rank * (nodeWidth + gapX) + nodeWidth / 2,
-        y: padding + top + lane * (nodeHeight + gapY) + nodeHeight / 2,
+        lane: index,
+        x: padding + left + lane * (nodeWidth + gapX) + nodeWidth / 2,
+        y: cursorY + row * (nodeHeight + gapRowY) + nodeHeight / 2,
       })
     })
+    cursorY += rows * nodeHeight + (rows - 1) * gapRowY + gapY
   }
+  const chartHeight = cursorY - gapY + padding
 
   const byId = new Map(items.map(item => [item.id, item]))
   const edges: TaskFlowEdge[] = []
@@ -218,25 +241,26 @@ function ownerCaption(
 }
 
 /**
- * A dependency's arrow, from the right of what is depended on to the left of
+ * A dependency's arrow: from the bottom of what is depended on to the top of
  * what waits on it.
  *
- * Two nodes in the same column have no room for a horizontal arrow, so the
- * curve bulges sideways instead of collapsing into a vertical line that would
+ * Two nodes on the same level have no vertical room between them, so the curve
+ * bulges to the side instead of collapsing into a horizontal line that would
  * read as the wrong direction.
  */
 function flowPath(from: TaskFlowItem, to: TaskFlowItem): string {
-  const startX = from.x + FLOW_NODE.width / 2 - 4
-  const endX = to.x - FLOW_NODE.width / 2 + 3
-  if (endX - startX < 24) {
-    const bow = FLOW_NODE.width / 2 + 28
-    const direction = to.y >= from.y ? 1 : -1
-    return `M ${startX} ${from.y} C ${startX + bow} ${from.y + direction * 18}, `
-      + `${startX + bow} ${to.y - direction * 18}, ${endX} ${to.y}`
+  const startY = from.y + FLOW_NODE.height / 2 - 3
+  const endY = to.y - FLOW_NODE.height / 2 + 2
+  if (endY - startY < 20) {
+    const bow = FLOW_NODE.height / 2 + 24
+    const direction = to.x >= from.x ? 1 : -1
+    return `M ${from.x} ${startY} C ${from.x + direction * 18} ${startY + bow}, `
+      + `${to.x - direction * 18} ${endY - bow}, ${to.x} ${endY}`
   }
-  return `M ${startX} ${from.y} C ${(startX + endX) / 2} ${from.y}, `
-    + `${(startX + endX) / 2} ${to.y}, ${endX} ${to.y}`
+  const middle = (startY + endY) / 2
+  return `M ${from.x} ${startY} C ${from.x} ${middle}, ${to.x} ${middle}, ${to.x} ${endY}`
 }
+
 
 /** Which half of the board a task belongs to. */
 export type TaskFlowRegion = 'active' | 'archived'

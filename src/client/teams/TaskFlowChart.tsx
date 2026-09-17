@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { TeamTask } from '../../domain/types.js'
 import { buildTaskGraph, type TaskGraphNode } from '../task-graph.js'
 import { FLOW_NODE, layoutTaskRegions, type TaskFlowItem } from '../task-flow.js'
-import { taskSections, type TaskSection } from '../task-description.js'
+import { groupTaskBlocks, inlineTokens, taskBlocks, type InlineToken, type TaskBlock } from '../task-markdown.js'
 import css from '../AgentTeam.module.css'
 
 const STATE_LABELS: Readonly<Record<TaskGraphNode['state'], string>> = {
@@ -375,14 +375,13 @@ function TaskFacts({
   node: TaskGraphNode
   owners: readonly string[]
 }): JSX.Element {
-  const written = taskSections(node.description)
-  const titled = (labels: readonly string[]): TaskSection | undefined =>
-    written.find(section => section.title !== undefined
-      && labels.some(label => section.title === label || section.title!.endsWith(label)))
-  const body = written.filter(section => section.title === undefined)
-  const output = titled(['输出', '产出', '交付物', '交付'])
-  const input = titled(['输入', '输入物', '进入条件'])
-  const acceptance = titled(['验收标准', '验收判据', '验收', '完成后', '边界（不做）'])
+  const groups = groupTaskBlocks(taskBlocks(node.description))
+  const label = (names: readonly string[]) =>
+    groups.find(group => group.title !== undefined && names.includes(group.title))
+  const body = groups.filter(group => group.title === undefined)
+  const output = label(['输出'])
+  const input = label(['输入'])
+  const acceptance = label(['验收'])
 
   return (
     <div className={css.taskDetailSections}>
@@ -399,7 +398,7 @@ function TaskFacts({
 
       <TaskFactBlock title="任务描述">
         {body.length > 0
-          ? <SectionContent section={{ items: body.flatMap(s => s.items), paragraphs: body.flatMap(s => s.paragraphs) }} />
+          ? <BlockList blocks={body.flatMap(group => group.blocks)} />
           : <p className={css.taskDetailMissing}>未填写</p>}
       </TaskFactBlock>
 
@@ -411,19 +410,19 @@ function TaskFacts({
 
       <TaskFactBlock title="输出">
         {output !== undefined
-          ? <SectionContent section={output} />
+          ? <BlockList blocks={output.blocks} />
           : <p className={css.taskDetailMissing}>未填写（任务完成后由成员在结果中给出）</p>}
       </TaskFactBlock>
 
       <TaskFactBlock title="输入">
         {input !== undefined
-          ? <SectionContent section={input} />
+          ? <BlockList blocks={input.blocks} />
           : <p className={css.taskDetailMissing}>未填写</p>}
       </TaskFactBlock>
 
       {acceptance !== undefined && (
         <TaskFactBlock title="验收">
-          <SectionContent section={acceptance} />
+          <BlockList blocks={acceptance.blocks} />
         </TaskFactBlock>
       )}
     </div>
@@ -440,43 +439,64 @@ function TaskFactBlock({ title, children }: { title: string; children: ReactNode
   )
 }
 
-/** A section's points and prose, with the inline emphasis kept. */
-function SectionContent({ section }: { section: TaskSection }): JSX.Element {
+/** The blocks of one section, each drawn as the kind of block it is. */
+function BlockList({ blocks }: { blocks: readonly TaskBlock[] }): JSX.Element {
   return (
     <>
-      {section.items.length > 0 && (
-        <ol className={css.taskDetailList}>
-          {section.items.map((item, index) => (
-            <li key={index} className={css.taskDetailItem}>
-              <span className={css.taskDetailItemIndex} aria-hidden="true">{index + 1}</span>
-              <span className={css.taskDetailItemText}>{inlineParts(item)}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-      {section.paragraphs.map((paragraph, index) => (
-        <p key={index} className={css.taskDetailParagraph}>{inlineParts(paragraph)}</p>
-      ))}
+      {blocks.map((block, index) => <Block key={index} block={block} />)}
     </>
   )
 }
 
-/** `**bold**` and `` `code` `` as spans, so the common emphasis survives. */
-function inlineParts(text: string): Array<string | JSX.Element> {
-  const parts: Array<string | JSX.Element> = []
-  const pattern = /\*\*(.+?)\*\*|`([^`]+)`/g
-  let last = 0
-  let match = pattern.exec(text)
-  let key = 0
-  while (match !== null) {
-    if (match.index > last) parts.push(text.slice(last, match.index))
-    if (match[1] !== undefined) parts.push(<strong key={key++}>{match[1]}</strong>)
-    else if (match[2] !== undefined) parts.push(<code key={key++} className={css.taskDetailCode}>{match[2]}</code>)
-    last = match.index + match[0].length
-    match = pattern.exec(text)
+function Block({ block }: { block: TaskBlock }): JSX.Element | null {
+  switch (block.kind) {
+    case 'heading':
+      return (
+        <h5 className={css.taskDetailBlockHeading} data-level={block.level}>
+          {inline(block.text)}
+        </h5>
+      )
+    case 'items':
+      return (
+        <ol className={css.taskDetailList}>
+          {block.items.map((item, index) => (
+            <li key={index} className={css.taskDetailItem}>
+              <span className={css.taskDetailItemIndex} aria-hidden="true">{index + 1}</span>
+              <span className={css.taskDetailItemText}>{inline(item)}</span>
+            </li>
+          ))}
+        </ol>
+      )
+    case 'code':
+      return (
+        <pre className={css.taskDetailCodeBlock} data-language={block.language}>
+          <code>{block.text}</code>
+        </pre>
+      )
+    case 'quote':
+      return <blockquote className={css.taskDetailQuote}>{inline(block.text)}</blockquote>
+    case 'rule':
+      return <hr className={css.taskDetailRule} />
+    case 'paragraph':
+      return <p className={css.taskDetailParagraph}>{inline(block.text)}</p>
   }
-  if (last < text.length) parts.push(text.slice(last))
-  return parts
+}
+
+/** Render one line's inline tokens with the application's own elements. */
+function inline(text: string): Array<string | JSX.Element> {
+  return inlineTokens(text).map((token: InlineToken, index) => {
+    switch (token.kind) {
+      case 'strong': return <strong key={index}>{token.text}</strong>
+      case 'code': return <code key={index} className={css.taskDetailCode}>{token.text}</code>
+      case 'link':
+        return (
+          <a key={index} href={token.href} target="_blank" rel="noreferrer noopener">
+            {token.text}
+          </a>
+        )
+      default: return token.text
+    }
+  })
 }
 
 /** Badge width: the label plus its padding, so the pill always fits its word. */

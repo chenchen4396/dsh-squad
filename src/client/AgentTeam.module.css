@@ -4163,3 +4163,40 @@ textarea.input {
   font-size: 12px;
   font-style: italic;
 }
+
+/* The Markdown blocks a description can be made of. */
+.taskDetailBlockHeading {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.taskDetailCodeBlock {
+  margin: 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-markdown-code-block-small, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.taskDetailQuote {
+  margin: 0;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.taskDetailRule {
+  height: 0;
+  margin: 2px 0;
+  border: none;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}

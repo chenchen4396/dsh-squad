@@ -61,15 +61,18 @@ describe('team runtime support', () => {
 
     const prompt = memberPrompt(team, leader, 'Coordinate.')
     expect(prompt).toContain('You arrange the work; you do not carry it out')
-    expect(prompt).toContain('A task is the only way work reaches a member')
+    expect(prompt).toContain('Work reaches a member as a task, never as a message')
     expect(prompt).toContain('Close the loop on what you assign')
+    // Talking to the team is still the Leader's job: only assigning is not.
+    expect(prompt).toContain('Talking to the team is still yours to do')
+    expect(prompt).toContain('a message asks, answers or explains, it does not assign')
     // The role line still tells it the truth about ownership.
     expect(prompt).toContain('Your role is leader')
     // A member is never told it arranges anything.
     expect(memberPrompt(team, coder, 'Implement.')).not.toContain('You arrange the work')
   })
 
-  it('says in the roster that work travels as tasks, not as messages', () => {
+  it('keeps the team channel for conversation while work travels as tasks', () => {
     const leader = member('leader-slot', 'Code Leader', 'leader')
     const team = {
       id: 'team-1',
@@ -79,7 +82,9 @@ describe('team runtime support', () => {
     } as unknown as TeamAggregate
     const prompt = rosterPrompt(team)
     expect(prompt).toContain('Work travels as tasks')
-    expect(prompt).toContain('for talking, not for handing out work')
+    expect(prompt).toContain('never the work itself')
+    // The channel is not forbidden outright — it is where the talking happens.
+    expect(prompt).not.toContain('only do not use')
   })
 
   it('keeps the spec in the order the reader reads it', () => {

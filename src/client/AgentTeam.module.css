@@ -3576,8 +3576,22 @@ textarea.input {
 }
 
 /* The left half is the work; the right half is the archive beside it. */
+/*
+ * The chart and its detail side by side. With many tasks the chart is taller
+ * than the panel, so a detail stacked underneath it sits below the fold and a
+ * click appears to do nothing; beside it, the detail is where the reader is
+ * already looking.
+ */
+.taskFlowMain {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
 .taskFlowSplit {
   display: flex;
+  flex: 1 1 auto;
   gap: 12px;
   align-items: flex-start;
   min-width: 0;
@@ -3827,6 +3841,9 @@ textarea.input {
 .taskFlowDetail {
   display: flex;
   flex-direction: column;
+  /* Beside the chart on a wide panel: a detail under a tall chart is a scroll
+     away from the card that opened it. A narrow panel stacks it instead. */
+  flex: 0 0 300px;
   gap: 7px;
   padding: 10px 13px;
   border: 1px solid var(--dsw-alias-border-l1);
@@ -3999,5 +4016,15 @@ textarea.input {
   .taskFlowAccent,
   .taskFlowProgressFill {
     animation: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .taskFlowMain {
+    flex-wrap: wrap;
+  }
+
+  .taskFlowDetail {
+    flex: 1 1 100%;
   }
 }

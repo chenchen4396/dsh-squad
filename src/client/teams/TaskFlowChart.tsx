@@ -96,6 +96,7 @@ export function TaskFlowChart({
           ))}
         </ul>
       </div>
+      <div className={css.taskFlowMain}>
       <div className={css.taskFlowSplit}>
         {/* The large half: everything not yet finished, in dependency order. */}
         <section className={css.taskFlowActive}>
@@ -188,7 +189,10 @@ export function TaskFlowChart({
           </details>
         </aside>
       </div>
+      {/* Beside the chart, not below it: with many tasks the chart is tall, and
+          a detail under it is a scroll away from the card that was clicked. */}
       <TaskDetail node={selected} members={members} onPick={setSelectedId} />
+      </div>
     </div>
   )
 }

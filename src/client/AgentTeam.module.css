@@ -4155,3 +4155,11 @@ textarea.input {
   font-family: var(--dsw-font-markdown-code-block-small, monospace);
   font-size: 11px;
 }
+
+/* A section nobody has filled in says so, rather than showing an empty box. */
+.taskDetailMissing {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-style: italic;
+}

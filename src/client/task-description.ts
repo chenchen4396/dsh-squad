@@ -27,6 +27,17 @@ const MARKDOWN_HEADING = /^(#{1,6})\s+(.+?)\s*$/
 const MARKDOWN_BULLET = /^\s*(?:[-*•]|\d+\s*[.)、．])\s*(.*)$/
 const EMPTY_TITLE = /^(?:#{1,6}|【.*?】)$/
 
+/**
+ * A label the team writes as a heading in plain text: `输入：` on its own line.
+ *
+ * The canonical labels the dialog renders are matched here so a description
+ * that already names its inputs, outputs, dependencies or acceptance keeps that
+ * structure instead of collapsing into one body of prose.
+ */
+const LABEL_HEADING = /^(输入|输入物|进入条件|输出|产出|交付物|前置依赖|前置条件|依赖|责任人|负责人|验收标准|验收判据|验收)\s*[:：]?\s*$/
+/** Longer labels first, so `前置依赖` is not read as `依赖`. */
+const LABEL_ORDER = ['前置依赖', '前置条件', '输入物', '进入条件', '验收标准', '验收判据', '责任人', '负责人', '输入', '输出', '产出', '交付物', '依赖', '验收']
+
 /** Break one description into sections, in the order they were written. */
 export function taskSections(description: string): TaskSection[] {
   const sections: TaskSection[] = []
@@ -53,6 +64,13 @@ export function taskSections(description: string): TaskSection[] {
     if (heading !== null) {
       flush()
       current.title = heading[2]!.trim()
+      continue
+    }
+    const label = LABEL_ORDER.find(candidate => line.startsWith(candidate)
+      && LABEL_HEADING.test(line))
+    if (label !== undefined) {
+      flush()
+      current.title = label
       continue
     }
     const bullet = line.match(MARKDOWN_BULLET)

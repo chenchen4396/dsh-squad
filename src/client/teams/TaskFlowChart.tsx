@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { TeamTask } from '../../domain/types.js'
 import { buildTaskGraph, type TaskGraphNode } from '../task-graph.js'
@@ -305,7 +305,6 @@ function TaskDetail({
 
   if (node === undefined || typeof document === 'undefined') return null
   const owners = node.ownerSlotIds.map(slotId => members[slotId]?.displayName ?? slotId)
-  const sections = taskSections(node.description)
   return createPortal(
     <div className={css.taskDetailBackdrop} onClick={onClose} role="presentation">
       <div
@@ -334,9 +333,7 @@ function TaskDetail({
             <dt>完成后解锁</dt>
             <dd>{node.blocks.length === 0 ? '无' : node.blocks.join('、')}</dd>
           </dl>
-          {sections.map((section, index) => (
-            <TaskSectionBody key={`${section.title ?? 'body'}-${index}`} section={section} />
-          ))}
+          <TaskFacts node={node} owners={owners} />
           {(node.waitingOn.length > 0 || node.blocks.length > 0) && (
             <div className={css.taskFlowDetailLinks}>
               {[...node.waitingOn, ...node.blocks].map(id => (
@@ -358,13 +355,95 @@ function TaskDetail({
   )
 }
 
-/** One section of a description: its heading, its points, then its prose. */
-function TaskSectionBody({ section }: { section: TaskSection }): JSX.Element {
+/**
+ * The one shape every task is read in.
+ *
+ * Whoever wrote the task, the reader asks the same questions in the same order:
+ * what must come first, what is the work, who holds it, what comes out and what
+ * goes in. Rendering the description as free prose left those questions to be
+ * answered by reading, so the dialog states them as sections.
+ *
+ * 前置依赖 and 责任人 come from the task's own fields, which is what the board
+ * already acts on. 输出 and 输入 have no field yet: they are read out of the
+ * description when its author named them, and the section says so when nobody
+ * has filled them in rather than showing an empty box.
+ */
+function TaskFacts({
+  node,
+  owners,
+}: {
+  node: TaskGraphNode
+  owners: readonly string[]
+}): JSX.Element {
+  const written = taskSections(node.description)
+  const titled = (labels: readonly string[]): TaskSection | undefined =>
+    written.find(section => section.title !== undefined
+      && labels.some(label => section.title === label || section.title!.endsWith(label)))
+  const body = written.filter(section => section.title === undefined)
+  const output = titled(['输出', '产出', '交付物', '交付'])
+  const input = titled(['输入', '输入物', '进入条件'])
+  const acceptance = titled(['验收标准', '验收判据', '验收', '完成后', '边界（不做）'])
+
+  return (
+    <div className={css.taskDetailSections}>
+      <TaskFactBlock title="前置依赖">
+        {node.waitingOn.length > 0
+          ? <ul className={css.taskDetailList}>{node.waitingOn.map(id => (
+              <li key={id} className={css.taskDetailItem}>
+                <span className={css.taskDetailItemIndex} aria-hidden="true">↑</span>
+                <span className={css.taskDetailItemText}>{id.slice(0, 8)}</span>
+              </li>
+            ))}</ul>
+          : <p className={css.taskDetailMissing}>{node.dependsOn.length > 0 ? '依赖已全部满足' : '无（可立即开始）'}</p>}
+      </TaskFactBlock>
+
+      <TaskFactBlock title="任务描述">
+        {body.length > 0
+          ? <SectionContent section={{ items: body.flatMap(s => s.items), paragraphs: body.flatMap(s => s.paragraphs) }} />
+          : <p className={css.taskDetailMissing}>未填写</p>}
+      </TaskFactBlock>
+
+      <TaskFactBlock title="任务责任人">
+        {owners.length === 0
+          ? <p className={css.taskDetailMissing}>未分配</p>
+          : <p className={css.taskDetailParagraph}>{owners.join('、')}</p>}
+      </TaskFactBlock>
+
+      <TaskFactBlock title="输出">
+        {output !== undefined
+          ? <SectionContent section={output} />
+          : <p className={css.taskDetailMissing}>未填写（任务完成后由成员在结果中给出）</p>}
+      </TaskFactBlock>
+
+      <TaskFactBlock title="输入">
+        {input !== undefined
+          ? <SectionContent section={input} />
+          : <p className={css.taskDetailMissing}>未填写</p>}
+      </TaskFactBlock>
+
+      {acceptance !== undefined && (
+        <TaskFactBlock title="验收">
+          <SectionContent section={acceptance} />
+        </TaskFactBlock>
+      )}
+    </div>
+  )
+}
+
+/** One titled block of the template. */
+function TaskFactBlock({ title, children }: { title: string; children: ReactNode }): JSX.Element {
   return (
     <section className={css.taskDetailSection}>
-      {section.title !== undefined && (
-        <h4 className={css.taskDetailSectionTitle}>{section.title}</h4>
-      )}
+      <h4 className={css.taskDetailSectionTitle}>{title}</h4>
+      {children}
+    </section>
+  )
+}
+
+/** A section's points and prose, with the inline emphasis kept. */
+function SectionContent({ section }: { section: TaskSection }): JSX.Element {
+  return (
+    <>
       {section.items.length > 0 && (
         <ol className={css.taskDetailList}>
           {section.items.map((item, index) => (
@@ -378,7 +457,7 @@ function TaskSectionBody({ section }: { section: TaskSection }): JSX.Element {
       {section.paragraphs.map((paragraph, index) => (
         <p key={index} className={css.taskDetailParagraph}>{inlineParts(paragraph)}</p>
       ))}
-    </section>
+    </>
   )
 }
 

@@ -110,6 +110,8 @@ export function TaskFlowChart({
                   <svg
                     className={css.taskFlowSvg}
                     viewBox={`0 0 ${chart.width} ${chart.height}`}
+                    width={chart.width}
+                    height={chart.height}
                     role="img"
                     aria-label={`进行中的任务流程图，共 ${chart.items.length} 个任务`}
                   >

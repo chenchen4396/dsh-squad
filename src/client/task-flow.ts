@@ -266,18 +266,66 @@ function flowPath(from: TaskFlowItem, to: TaskFlowItem): string {
 export type TaskFlowRegion = 'active' | 'archived'
 
 /**
- * The board split into the work in flight and the work that is finished.
+ * How many finished tasks stay in the chart even though nothing waits on them.
  *
- * Finished tasks leave the graph: their dependencies are satisfied, so keeping
- * them in the chart would stretch it sideways for no information while every
- * arrow into them has already done its job. They collapse instead into a short
- * archive, where "it is done" is the whole story.
+ * A step that just finished is what the reader is looking for: it explains
+ * where the task below it came from. Dropping it the moment it completes breaks
+ * the chain at exactly the point the reader is following, so the most recent
+ * few are kept until newer work pushes them out.
+ */
+export const KEEP_RECENT_FINISHED = 3
+
+/**
+ * Whether a task has left the chart for the archive.
  *
- * A cancelled task is archived too — it has left the board as surely as a
- * finished one and must not hold a column in the chart of live work.
+ * Only finished and cancelled tasks are ever archived — everything else is
+ * still work, however it reads. That is what makes this a statement about the
+ * record rather than about the chart: what a task *draws* as is `state`.
  */
 export function taskFlowRegion(state: TeamTask['status']): TaskFlowRegion {
   return state === 'completed' || state === 'cancelled' ? 'archived' : 'active'
+}
+
+/**
+ * The finished tasks the chart keeps, because the work they explain is below
+ * them.
+ *
+ * A finished task is kept while an unfinished task that sits below it — the
+ * work it unblocks — is still drawn, and while it is among the most recent to
+ * finish. Everything else has nothing left to explain.
+ */
+export function keptInFlow(
+  nodes: readonly TaskGraphNode[],
+  keep = KEEP_RECENT_FINISHED,
+): Set<string> {
+  const finished = new Set(
+    nodes.filter(node => taskFlowRegion(node.status) === 'archived').map(node => node.id),
+  )
+  const unfinished = nodes.filter(node => !finished.has(node.id))
+
+  // Walk down from each unfinished task: everything it waits on, directly or
+  // not, is a step in a chain the reader is following.
+  const required = new Set<string>()
+  const pending = unfinished.flatMap(node => node.dependsOn.concat(node.waitingOn))
+  while (pending.length > 0) {
+    const id = pending.pop()!
+    if (!finished.has(id) || required.has(id)) continue
+    required.add(id)
+    const node = nodes.find(candidate => candidate.id === id)
+    if (node !== undefined) pending.push(...node.dependsOn, ...node.waitingOn)
+  }
+
+  // Newest first, so a long chain keeps its most recent links rather than its
+  // oldest. Ids break ties so the chart does not reshuffle between renders.
+  const recent = [...required]
+    .sort((left, right) => {
+      const a = nodes.find(node => node.id === left)!
+      const b = nodes.find(node => node.id === right)!
+      return b.updatedAt.localeCompare(a.updatedAt) || left.localeCompare(right)
+    })
+    .slice(0, keep)
+
+  return new Set(recent)
 }
 
 export interface TaskFlowRegions {
@@ -292,9 +340,14 @@ export function layoutTaskRegions(
   graph: TaskGraphView,
   members: Readonly<Record<string, { displayName: string }>> = {},
 ): TaskFlowRegions {
-  const active = graph.nodes.filter(node => taskFlowRegion(node.status) === 'active')
+  // A finished step the chart keeps counts as drawn work: it stays out of the
+  // archive, so a task never appears in both halves.
+  const kept = keptInFlow(graph.nodes)
+  const active = graph.nodes.filter(node => (
+    taskFlowRegion(node.status) === 'active' || kept.has(node.id)
+  ))
   const archived = graph.nodes
-    .filter(node => taskFlowRegion(node.status) === 'archived')
+    .filter(node => taskFlowRegion(node.status) === 'archived' && !kept.has(node.id))
     .slice()
     .reverse()
 

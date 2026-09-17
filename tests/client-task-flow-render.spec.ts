@@ -47,13 +47,13 @@ describe('TaskFlowChart rendering', () => {
     console.log('--- 图内文本 ---')
     console.log([...html.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map(match => match[1]).join(' | '))
 
-    // The finished task left the chart: four live cards, each with its own
-    // state badge, and the arrows that reached the archived one are gone.
-    expect([...html.matchAll(/class="_taskFlowCard/g)]).toHaveLength(4)
-    expect([...html.matchAll(/class="_taskFlowBadge_/g)]).toHaveLength(4)
-    expect([...html.matchAll(/marker-end/g)]).toHaveLength(3)
+    // The finished 解析 unlocks 转码, so it stays drawn with its arrow: five
+    // cards, five arrows. Only a finished task that explains nothing archives.
+    expect([...html.matchAll(/class="_taskFlowCard/g)]).toHaveLength(5)
+    expect([...html.matchAll(/class="_taskFlowBadge_/g)]).toHaveLength(5)
+    expect([...html.matchAll(/marker-end/g)]).toHaveLength(5)
     // Each card gets a halo layer, which is what breathes while a task runs.
-    expect([...html.matchAll(/class="_taskFlowHalo_/g)]).toHaveLength(4)
+    expect([...html.matchAll(/class="_taskFlowHalo_/g)]).toHaveLength(5)
     // Something is running here, so the header line animates with it.
     expect(html).toContain('data-active="true"')
 
@@ -67,8 +67,8 @@ describe('TaskFlowChart rendering', () => {
     expect(html).toContain('转码')
     expect(html).toContain('data-state="running"')
     expect(html).toContain('data-state="blocked"')
-    // The finished task is archived on the right instead, still reachable.
-    expect(html).toContain('taskFlowArchiveItem')
+    // The step that explains live work stays in the chart rather than moving
+    // aside, which is the point: the chain reads without a gap.
     expect(html).toContain('解析')
     expect(html).toContain('1/5 已完成')
     // Both halves are named.

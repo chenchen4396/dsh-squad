@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { buildTaskGraph } from '../src/client/task-graph.js'
 import {
   FLOW_NODE,
+  KEEP_RECENT_FINISHED,
+  keptInFlow,
   layoutTaskFlow,
   layoutTaskRegions,
   taskFlowRegion,
@@ -156,28 +158,30 @@ describe('layoutTaskRegions', () => {
     expect(chart.archived.map(item => item.id)).toEqual(['dropped', 'done'])
   })
 
-  it('keeps a dependency on an archived task out of the live chart', () => {
-    // The dependency is satisfied, so the arrow has done its job and the live
-    // chart must not stretch down to reach the archive.
+  it('keeps the finished dependency of live work in the chart, with its arrow', () => {
+    // The step a task came from is the chain the reader is following, so it
+    // stays drawn and keeps its arrow.
     const chart = layoutTaskRegions(buildTaskGraph([
       task('design', { status: 'completed' }),
       task('implement', { dependencyIds: ['design'], status: 'running' }),
     ]))
 
-    expect(chart.active.edges).toEqual([])
-    expect(chart.active.items.map(item => item.id)).toEqual(['implement'])
-    expect(chart.active.items[0]!.level).toBe(0)
-    expect(chart.archived.map(item => item.id)).toEqual(['design'])
+    expect(chart.active.items.map(item => item.id)).toEqual(['design', 'implement'])
+    expect(chart.active.edges).toHaveLength(1)
+    expect(chart.active.items.find(item => item.id === 'implement')!.level).toBe(1)
+    expect(chart.archived).toEqual([])
   })
 
-  it('drops an archived task from a live task waiting list', () => {
-    // A cancelled dependency counts as satisfied, so the dependent is startable.
+  it('counts a cancelled dependency as satisfied and still draws the chain', () => {
+    // A cancelled step blocks nothing, so the dependent is startable — and the
+    // step it came from stays in the chart for the same reason a finished one does.
     const chart = layoutTaskRegions(buildTaskGraph([
       task('optional', { status: 'cancelled' }),
       task('implement', { dependencyIds: ['optional'] }),
     ]))
-    expect(chart.active.items.map(item => item.id)).toEqual(['implement'])
-    expect(chart.archived.map(item => item.id)).toEqual(['optional'])
+    expect(chart.active.items.map(item => item.id).sort()).toEqual(['implement', 'optional'])
+    expect(chart.active.items.find(item => item.id === 'implement')!.state).toBe('ready')
+    expect(chart.archived).toEqual([])
   })
 
   it('classifies a task by its record status', () => {
@@ -225,5 +229,82 @@ describe('node subtitles and arrow colours', () => {
     ])
     // `waiting` is blocked, so its arrow carries the blocked colour.
     expect(chart.edges[0]!.sourceState).toBe('blocked')
+  })
+})
+
+describe('finished steps the chart keeps', () => {
+  it('keeps the step a live task came from instead of breaking the chain', () => {
+    const chart = layoutTaskRegions(buildTaskGraph([
+      task('done', { status: 'completed', updatedAt: '2026-01-02T00:00:00.000Z' }),
+      task('running', { status: 'running', dependencyIds: ['done'] }),
+    ]))
+
+    // The finished step is what explains the task below it, so it stays drawn.
+    expect(chart.active.items.map(item => item.id).sort()).toEqual(['done', 'running'])
+    expect(chart.archived).toEqual([])
+    // Its arrow is still there, which is the point of keeping it.
+    expect(chart.active.edges).toHaveLength(1)
+    expect(chart.active.items.find(item => item.id === 'done')!.state).toBe('done')
+  })
+
+  it('keeps a chain of finished steps, not only the last one', () => {
+    const chart = layoutTaskRegions(buildTaskGraph([
+      task('a', { status: 'completed', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      task('b', { status: 'completed', dependencyIds: ['a'], updatedAt: '2026-01-02T00:00:00.000Z' }),
+      task('c', { status: 'running', dependencyIds: ['b'] }),
+    ]))
+
+    expect(chart.active.items.map(item => item.id).sort()).toEqual(['a', 'b', 'c'])
+    expect(chart.archived).toEqual([])
+  })
+
+  it('never shows one task in both halves', () => {
+    const chart = layoutTaskRegions(buildTaskGraph([
+      task('done', { status: 'completed' }),
+      task('running', { status: 'running', dependencyIds: ['done'] }),
+    ]))
+
+    const drawn = new Set(chart.active.items.map(item => item.id))
+    for (const archived of chart.archived) expect(drawn.has(archived.id)).toBe(false)
+  })
+
+  it('archives a finished step that leads nowhere, however recent', () => {
+    const chart = layoutTaskRegions(buildTaskGraph([
+      task('loose', { status: 'completed', updatedAt: '2026-06-01T00:00:00.000Z' }),
+      task('running', { status: 'running' }),
+    ]))
+
+    expect(chart.active.items.map(item => item.id)).toEqual(['running'])
+    expect(chart.archived.map(item => item.id)).toEqual(['loose'])
+  })
+
+  it('stops at the keep limit and archives the rest of a long chain', () => {
+    const finished = Array.from({ length: KEEP_RECENT_FINISHED + 2 }, (_, index) =>
+      task(`s${index}`, {
+        status: 'completed',
+        dependencyIds: index === 0 ? [] : [`s${index - 1}`],
+        updatedAt: `2026-01-0${index + 1}T00:00:00.000Z`,
+      }))
+    const chart = layoutTaskRegions(buildTaskGraph([
+      ...finished,
+      task('running', { status: 'running', dependencyIds: [`s${KEEP_RECENT_FINISHED + 1}`] }),
+    ]))
+
+    expect(chart.active.items.filter(item => item.state === 'done')).toHaveLength(KEEP_RECENT_FINISHED)
+    // The oldest links fall back to the archive rather than growing the chart.
+    expect(chart.archived.map(item => item.id).sort()).toEqual(['s0', 's1'])
+  })
+
+  it('keeps the most recent links of a chain, not the oldest', () => {
+    const nodes = buildTaskGraph([
+      task('old', { status: 'completed', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      task('new', { status: 'completed', dependencyIds: ['old'], updatedAt: '2026-03-01T00:00:00.000Z' }),
+      task('running', { status: 'running', dependencyIds: ['new'] }),
+    ]).nodes
+    expect([...keptInFlow(nodes, 1)]).toEqual(['new'])
+  })
+
+  it('is empty when nothing finished', () => {
+    expect([...keptInFlow(buildTaskGraph([task('a', { status: 'running' })]).nodes)]).toEqual([])
   })
 })

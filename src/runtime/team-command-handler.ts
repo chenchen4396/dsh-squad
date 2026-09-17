@@ -289,6 +289,8 @@ export class TeamCommandHandler {
     recipientSlotId: string,
     rawContent: string,
     type: 'instruction' | 'progress' | 'result' | 'question' | 'warning' = 'progress',
+    /** The task this message is about, when it is about one. */
+    relatedTaskId?: string,
   ): Promise<{ messageId: string; deliveryState: 'delivered' }> {
     const team = this.service.getTeam(teamId)
     const sender = team.members[senderSlotId]
@@ -325,6 +327,7 @@ export class TeamCommandHandler {
         : { kind: 'member', slotId: recipientSlotId },
       type,
       content,
+      ...(relatedTaskId === undefined ? {} : { relatedTaskId }),
       idempotencyKey: String(relay.id),
     })
     await this.service.putRuntimeMessage(record)

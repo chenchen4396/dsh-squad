@@ -7,7 +7,7 @@ import {
   taskMessageType,
   teamMessageHeader,
 } from '../src/runtime/team-messages.js'
-import { memberPrompt, rosterPrompt, TASK_AUTHORING_SPEC } from '../src/runtime/team-prompts.js'
+import { memberPrompt, rosterPrompt, TASK_AUTHORING_SPEC, TEAM_MESSAGE_SPEC } from '../src/runtime/team-prompts.js'
 
 describe('team runtime support', () => {
   it('builds identity and roster prompts with stable member ids', () => {
@@ -84,6 +84,42 @@ describe('team runtime support', () => {
 
     // Both sides are told, so neither relies on a channel the other does not use.
     expect(memberPrompt(team, leader, 'Coordinate.')).toContain('You are the only route between members')
+    expect(memberPrompt(team, coder, 'Implement.')).toContain('the Leader is the only one you can message')
+    expect(rosterPrompt(team)).toContain('Members talk to the Leader and to no one else')
+  })
+
+  it('gives both roles the same message format', () => {
+    const leader = member('leader-slot', 'Code Leader', 'leader')
+    const coder = member('coder-slot', 'Coder', 'member')
+    const team = {
+      id: 'team-1',
+      name: 'Compiler Team',
+      leaderSlotId: leader.id,
+      members: { [leader.id]: leader, [coder.id]: coder },
+    } as unknown as TeamAggregate
+
+    // Relayed or not, a message has to say which task, what for, and what is
+    // needed — otherwise the Leader has to go and ask before routing anything.
+    for (const prompt of [memberPrompt(team, coder, 'Implement.'), memberPrompt(team, leader, 'Coordinate.')]) {
+      expect(prompt).toContain(TEAM_MESSAGE_SPEC)
+      expect(prompt).toContain('Name the task it is about')
+      expect(prompt).toContain('State what you need from the recipient')
+    }
+    expect(TEAM_MESSAGE_SPEC).toContain('never assigns work')
+  })
+
+  it('says the Leader is the only route between members', () => {
+    const leader = member('leader-slot', 'Code Leader', 'leader')
+    const coder = member('coder-slot', 'Coder', 'member')
+    const team = {
+      id: 'team-1',
+      name: 'Compiler Team',
+      leaderSlotId: leader.id,
+      members: { [leader.id]: leader, [coder.id]: coder },
+    } as unknown as TeamAggregate
+
+    expect(memberPrompt(team, leader, 'Coordinate.')).toContain('You are the only route between members')
+    expect(memberPrompt(team, leader, 'Coordinate.')).toContain('Relaying is not forwarding')
     expect(memberPrompt(team, coder, 'Implement.')).toContain('the Leader is the only one you can message')
     expect(rosterPrompt(team)).toContain('Members talk to the Leader and to no one else')
   })

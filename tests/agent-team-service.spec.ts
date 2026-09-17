@@ -804,6 +804,75 @@ describe('AgentTeamService', () => {
     )).resolves.toMatchObject({ deliveryState: 'delivered' })
   })
 
+  it('routes member messages through the Leader instead of member to member', async () => {
+    const { ctx, service, store, agents } = createHarness()
+    const assistant = await service.createAssistant(assistantInput())
+    const draft = await service.createTeamDraft({
+      name: 'Routed Team',
+      members: [
+        { assistantId: assistant.id, role: 'leader' },
+        { assistantId: assistant.id, role: 'member' },
+        { assistantId: assistant.id, role: 'member' },
+      ],
+    })
+    await store.updateTeam(draft.id, team => ({ ...team, state: 'active' }))
+    const team = service.getTeam(draft.id)
+    const [first, second] = Object.values(team.members).filter(member => member.role === 'member')
+    const teamRuntime = new TeamRuntime(ctx, config, service)
+    const runtime = runtimeInternals(teamRuntime)
+    const { conversationId } = await ownLeader(agents, service, team.id, fakeAgent())
+    await ownMember(service, teamRuntime, team.id, first!.id, fakeAgent(), conversationId)
+    await ownMember(service, teamRuntime, team.id, second!.id, fakeAgent(), conversationId)
+
+    // Even with direct member chat on, one member cannot reach another: the
+    // Leader is the single voice the team coordinates through.
+    expect(team.directMemberChat).toBe(true)
+    await expect(runtime.commands.sendMemberMessage(
+      team.id, conversationId, first!.id, second!.id, '直接找你了',
+    )).rejects.toThrow('Members may message only the Leader')
+
+    // Both directions to the Leader still work.
+    await expect(runtime.commands.sendMemberMessage(
+      team.id, conversationId, first!.id, team.leaderSlotId, '回报 Leader',
+    )).resolves.toMatchObject({ deliveryState: 'delivered' })
+    await expect(runtime.commands.sendMemberMessage(
+      team.id, conversationId, team.leaderSlotId, second!.id, '派活给成员',
+    )).resolves.toMatchObject({ deliveryState: 'delivered' })
+  })
+
+  it('records the task a message is about, so the Leader can route it', async () => {
+    const { ctx, service, store, agents } = createHarness()
+    const assistant = await service.createAssistant(assistantInput())
+    const draft = await service.createTeamDraft({
+      name: 'Named Task Team',
+      members: [
+        { assistantId: assistant.id, role: 'leader' },
+        { assistantId: assistant.id, role: 'member' },
+      ],
+    })
+    await store.updateTeam(draft.id, team => ({ ...team, state: 'active' }))
+    const team = service.getTeam(draft.id)
+    const member = Object.values(team.members).find(value => value.role === 'member')!
+    const teamRuntime = new TeamRuntime(ctx, config, service)
+    const runtime = runtimeInternals(teamRuntime)
+    const { conversationId } = await ownLeader(agents, service, team.id, fakeAgent())
+    await ownMember(service, teamRuntime, team.id, member.id, fakeAgent(), conversationId)
+    const task = await runtime.commands.createTask(team.id, conversationId, team.leaderSlotId, {
+      title: '实现驱动',
+      ownerSlotId: member.id,
+    })
+
+    await runtime.commands.sendMemberMessage(
+      team.id, conversationId, member.id, team.leaderSlotId,
+      '请求：请确认命令码\n需要：确认或纠正 netfn 取值',
+      'question', task.taskId,
+    )
+
+    const sent = service.listMessages(team.id).items
+      .find(message => message.sender.kind === 'member' && message.type === 'question')
+    expect(sent?.relatedTaskId).toBe(task.taskId)
+  })
+
   it('records task dependencies and refuses ones that cannot be run', async () => {
     const { ctx, service, store, agents } = createHarness()
     const assistant = await service.createAssistant(assistantInput())

@@ -1529,7 +1529,7 @@ export class TeamRuntime {
           },
           createTask: input => this.commands.createTask(team.id, conversationId, member.id, input),
           updateTask: input => this.commands.updateTask(team.id, conversationId, member.id, input),
-          sendMessage: (recipientSlotId, content, type) => (
+          sendMessage: (recipientSlotId, content, type, taskId) => (
             this.commands.sendMemberMessage(
               team.id,
               conversationId,
@@ -1537,6 +1537,7 @@ export class TeamRuntime {
               recipientSlotId,
               content,
               type,
+              taskId,
             )
           ),
         })
@@ -1800,13 +1801,14 @@ export class TeamRuntime {
           this.service.getTeam(team.id).leaderSlotId,
           input,
         ),
-        sendMessage: (recipientSlotId, content, type) => this.commands.sendMemberMessage(
+        sendMessage: (recipientSlotId, content, type, taskId) => this.commands.sendMemberMessage(
           team.id,
           conversation.id,
           this.service.getTeam(team.id).leaderSlotId,
           recipientSlotId,
           content,
           type,
+          taskId,
         ),
         answerMember: async input => {
           const pending = this.interactions.pending(input.interactionId)

@@ -31,6 +31,8 @@ interface TeamToolHandlers {
     recipientSlotId: string,
     content: string,
     type?: 'instruction' | 'progress' | 'result' | 'question' | 'warning',
+    /** The task this message is about, when it is about one. */
+    taskId?: string,
   ) => Promise<{ messageId: string; deliveryState: 'delivered' }>
   /**
    * Settle one member's pending question or approval. Members never talk to the
@@ -169,8 +171,9 @@ export function registerTeamTools(
     name: 'team_send_message',
     description: [
       'Send a message in this team and wake its recipient.',
-      'A member may message only the Leader; the Leader may message any member.',
-      'Members reach each other through the Leader, which relays what one needs the other to know.',
+      'A member may message only the Leader; the Leader may message any member, and members reach each other through the Leader.',
+      'Write every message in the team format: say which task it is about (pass taskId), what it is for, and what you need from the recipient.',
+      'A message asks, answers or explains — it never assigns work, and it never reports another member\'s finding as your own.',
     ].join(' '),
     parameters: {
       recipientSlotId: { type: 'string', required: true, description: 'Recipient member slot id.' },
@@ -178,7 +181,15 @@ export function registerTeamTools(
       type: {
         type: 'string',
         enum: ['instruction', 'progress', 'result', 'question', 'warning'],
-        description: 'Message purpose.',
+        description: [
+          'What the message is for: question to ask, warning to flag a blocker or risk,',
+          'progress to report work in flight, result to report work finished,',
+          'instruction to tell a member something that changes its task.',
+        ].join(' '),
+      },
+      taskId: {
+        type: 'string',
+        description: 'The task this message is about. Pass it whenever the message concerns a task, so the Leader can route it and the board can show it.',
       },
     },
     output: {
@@ -194,7 +205,7 @@ export function registerTeamTools(
     },
     execute: async (args, exec) => {
       handlers.assertIdentity(exec.agent)
-      return handlers.sendMessage(args.recipientSlotId, args.content, args.type)
+      return handlers.sendMessage(args.recipientSlotId, args.content, args.type, args.taskId)
     },
   })))
   if (handlers.answerMember !== undefined) disposers.push(agentCtx.tools.register(defineTool({

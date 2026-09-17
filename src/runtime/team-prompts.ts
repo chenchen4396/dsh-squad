@@ -3,6 +3,26 @@ import type { TeamAggregate, TeamMemberSlot } from '../domain/types.js'
 import type { RuleDocumentContent } from './rule-documents.js'
 
 /**
+ * How the team writes a message.
+ *
+ * Members cannot message each other, so anything one needs another to know
+ * passes through the Leader. A message that leaves out which task it concerns,
+ * or what it wants done, forces the Leader to go and ask before it can route
+ * anything — the relay becomes the bottleneck it was meant to avoid. Every
+ * message therefore carries three things: the task, what it is for, and what
+ * the recipient is expected to do about it.
+ */
+export const TEAM_MESSAGE_SPEC = [
+  'Write every team_send_message in this format:',
+  '1) Name the task it is about — pass its id as taskId. If it concerns no task, say so in the message.',
+  '2) State what the message is for, in its first line: a request, an answer, or a notice.',
+  '3) State what you need from the recipient: answer this question, unblock this step, confirm or correct this finding, or nothing further.',
+  'Then give the substance: what you did or found, where (file and line, command and its output), and what it means for the task.',
+  'Keep one subject per message. A message that asks two unrelated things gets one of them answered.',
+  'A message never assigns work and never claims another member\'s finding as your own: an assignment is a task, and a finding belongs to whoever made it.',
+].join('\n')
+
+/**
  * What the Leader is for: arranging work, not doing it, and talking to the
  * team while it happens.
  *
@@ -22,7 +42,8 @@ const LEADER_ROLE_INSTRUCTION = [
   'Do not write, edit or review the deliverables yourself, and do not explore the codebase to produce them. Investigating enough to split the work and judge a result is expected; producing the result yourself is not.',
   'Work reaches a member as a task, never as a message. If it is work, it belongs on the board with an owner: do not hand out work in a team message and do not leave work unspecified for someone to pick up.',
   'Talking to the team is still yours to do, and expected: use team_send_message to make a task precise, to answer what an owner is stuck on, to pass on something that changes a task, and to explain why a result is going back. What you must not do is deliver work that way — a message asks, answers or explains, it does not assign.',
-  'You are the only route between members. A member can message only you, so when one member needs something from another, you pass it on: relay the question, the finding or the blocker to whoever should act on it, as a task when it is work and as a message when it is not.',
+  'You are the only route between members. A member can message only you, so when one member needs something from another you pass it on: relay the question, the finding or the blocker to whoever should act on it — as a task when it is work, as a message when it is not.',
+  'Relaying is not forwarding: keep the author named, restate the request in the terms the recipient needs, and name the task it belongs to.',
   'Close the loop on what you assign: read each member update, judge it against the 验收 you wrote, and either accept it or send it back as a task with the defect stated. Report the team\'s result to the user yourself, and tell the user what is blocked rather than doing it for them.',
 ].join(' ')
 
@@ -69,6 +90,8 @@ export function memberPrompt(
     `You are ${member.displayName}, an independent Agent in the team “${team.name}”.`,
     `Your role is ${member.role}. The leader coordinates work but does not own other Agents.`,
     'All team members operate in the same Workspace, and the Leader is the only one you can message. When you need something from another member, ask the Leader and it will pass it on.',
+    // Both roles write messages, so the format is stated for both.
+    TEAM_MESSAGE_SPEC,
     ...(member.role === 'leader'
       ? [LEADER_ROLE_INSTRUCTION, TASK_AUTHORING_SPEC, LEADER_ASK_INSTRUCTION]
       : []),

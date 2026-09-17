@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { TeamTask } from '../../domain/types.js'
 import { buildTaskGraph, type TaskGraphNode } from '../task-graph.js'
 import { FLOW_NODE, layoutTaskRegions, type TaskFlowItem } from '../task-flow.js'
+import { taskSections, type TaskSection } from '../task-description.js'
 import css from '../AgentTeam.module.css'
 
 const STATE_LABELS: Readonly<Record<TaskGraphNode['state'], string>> = {
@@ -304,6 +305,7 @@ function TaskDetail({
 
   if (node === undefined || typeof document === 'undefined') return null
   const owners = node.ownerSlotIds.map(slotId => members[slotId]?.displayName ?? slotId)
+  const sections = taskSections(node.description)
   return createPortal(
     <div className={css.taskDetailBackdrop} onClick={onClose} role="presentation">
       <div
@@ -332,9 +334,9 @@ function TaskDetail({
             <dt>完成后解锁</dt>
             <dd>{node.blocks.length === 0 ? '无' : node.blocks.join('、')}</dd>
           </dl>
-          {node.description.length > 0 && (
-            <p className={css.taskFlowDetailDescription}>{node.description}</p>
-          )}
+          {sections.map((section, index) => (
+            <TaskSectionBody key={`${section.title ?? 'body'}-${index}`} section={section} />
+          ))}
           {(node.waitingOn.length > 0 || node.blocks.length > 0) && (
             <div className={css.taskFlowDetailLinks}>
               {[...node.waitingOn, ...node.blocks].map(id => (
@@ -354,6 +356,48 @@ function TaskDetail({
     </div>,
     document.body,
   )
+}
+
+/** One section of a description: its heading, its points, then its prose. */
+function TaskSectionBody({ section }: { section: TaskSection }): JSX.Element {
+  return (
+    <section className={css.taskDetailSection}>
+      {section.title !== undefined && (
+        <h4 className={css.taskDetailSectionTitle}>{section.title}</h4>
+      )}
+      {section.items.length > 0 && (
+        <ol className={css.taskDetailList}>
+          {section.items.map((item, index) => (
+            <li key={index} className={css.taskDetailItem}>
+              <span className={css.taskDetailItemIndex} aria-hidden="true">{index + 1}</span>
+              <span className={css.taskDetailItemText}>{inlineParts(item)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {section.paragraphs.map((paragraph, index) => (
+        <p key={index} className={css.taskDetailParagraph}>{inlineParts(paragraph)}</p>
+      ))}
+    </section>
+  )
+}
+
+/** `**bold**` and `` `code` `` as spans, so the common emphasis survives. */
+function inlineParts(text: string): Array<string | JSX.Element> {
+  const parts: Array<string | JSX.Element> = []
+  const pattern = /\*\*(.+?)\*\*|`([^`]+)`/g
+  let last = 0
+  let match = pattern.exec(text)
+  let key = 0
+  while (match !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index))
+    if (match[1] !== undefined) parts.push(<strong key={key++}>{match[1]}</strong>)
+    else if (match[2] !== undefined) parts.push(<code key={key++} className={css.taskDetailCode}>{match[2]}</code>)
+    last = match.index + match[0].length
+    match = pattern.exec(text)
+  }
+  if (last < text.length) parts.push(text.slice(last))
+  return parts
 }
 
 /** Badge width: the label plus its padding, so the pill always fits its word. */

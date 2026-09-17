@@ -4077,3 +4077,81 @@ textarea.input {
   box-shadow: none;
   padding: 0;
 }
+
+/*
+ * A description, laid out as the sections its author wrote.
+ *
+ * The text the team produces already has a shape — a 【heading】, numbered
+ * points, then prose — and rendering it as one paragraph throws that away.
+ */
+.taskDetailSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.taskDetailSection + .taskDetailSection {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.taskDetailSectionTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.taskDetailList {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.taskDetailItem {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.taskDetailItemIndex {
+  flex: none;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.taskDetailItemText {
+  flex: 1;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.taskDetailParagraph {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.taskDetailCode {
+  padding: 1px 4px;
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-family: var(--dsw-font-markdown-code-block-small, monospace);
+  font-size: 11px;
+}

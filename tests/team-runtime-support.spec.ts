@@ -7,7 +7,7 @@ import {
   taskMessageType,
   teamMessageHeader,
 } from '../src/runtime/team-messages.js'
-import { memberPrompt, rosterPrompt } from '../src/runtime/team-prompts.js'
+import { memberPrompt, rosterPrompt, TASK_AUTHORING_SPEC } from '../src/runtime/team-prompts.js'
 
 describe('team runtime support', () => {
   it('builds identity and roster prompts with stable member ids', () => {
@@ -24,6 +24,36 @@ describe('team runtime support', () => {
     expect(memberPrompt(team, coder, 'Implement assigned code.')).toContain('Implement assigned code.')
     expect(rosterPrompt(team)).toContain('Code Leader (leader), slotId=leader-slot')
     expect(rosterPrompt(team)).toContain('Coder (member), slotId=coder-slot')
+  })
+
+  it('tells the leader how to write a task, and tells members nothing of it', () => {
+    const leader = member('leader-slot', 'Code Leader', 'leader')
+    const coder = member('coder-slot', 'Coder', 'member')
+    const team = {
+      id: 'team-1',
+      name: 'Compiler Team',
+      leaderSlotId: leader.id,
+      members: { [leader.id]: leader, [coder.id]: coder },
+    } as unknown as TeamAggregate
+
+    const leaderPrompt = memberPrompt(team, leader, 'Coordinate.')
+    for (const label of ['前置依赖：', '任务描述：', '任务责任人：', '输出：', '输入：', '验收：']) {
+      expect(leaderPrompt).toContain(label)
+    }
+    // The description is for the reader; dependencyIds is what the board acts
+    // on, so the prompt has to say both.
+    expect(leaderPrompt).toContain('dependencyIds')
+    expect(leaderPrompt).toContain('will be drawn and dispatched as if it could start immediately')
+
+    // A member is told to write tasks, not how to author them.
+    expect(memberPrompt(team, coder, 'Implement.')).not.toContain(TASK_AUTHORING_SPEC)
+  })
+
+  it('keeps the spec in the order the reader reads it', () => {
+    const order = ['前置依赖：', '任务描述：', '任务责任人：', '输出：', '输入：', '验收：']
+      .map(label => TASK_AUTHORING_SPEC.indexOf(label))
+    expect(order.every(index => index >= 0)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
   })
 
   it('appends imported rule documents after the assistant instructions', () => {

@@ -77,10 +77,17 @@ export function registerTeamTools(
     description: [
       'Create and optionally assign a task on the shared team task board. Only the current leader may call this.',
       'Name one owner for a single-owner task, or several owners with ownerSlotIds to have them work on it in parallel.',
+      'Write `description` as the labelled sections the team reads:',
+      '前置依赖：/ 任务描述：/ 任务责任人：/ 输出：/ 输入：/ 验收：, one per line, in that order (验收 optional; write 无 where a section has nothing).',
+      'Detail under a section belongs as numbered points, and Markdown is welcome.',
+      'A real prerequisite must also be passed in `dependencyIds`: the description tells the reader, but `dependencyIds` is what the board and the task graph act on.',
     ].join(' '),
     parameters: {
       title: { type: 'string', required: true },
-      description: { type: 'string' },
+      description: {
+        type: 'string',
+        description: 'The task, written as 前置依赖：/ 任务描述：/ 任务责任人：/ 输出：/ 输入：/ 验收： sections, one per line.',
+      },
       ownerSlotId: { type: 'string', description: 'Current member slot id to assign as the single owner.' },
       ownerSlotIds: {
         type: 'array',
@@ -91,7 +98,7 @@ export function registerTeamTools(
       dependencyIds: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Task ids this task waits on. Its owner should not start before they complete; the board shows the dependency.',
+        description: 'Task ids this task waits on. Required whenever the task really does wait on another: the task graph and the board act on this field, not on the description.',
       },
     },
     output: {

@@ -768,6 +768,42 @@ describe('AgentTeamService', () => {
     })
   })
 
+  it('routes member messages through the Leader instead of member to member', async () => {
+    const { ctx, service, store, agents } = createHarness()
+    const assistant = await service.createAssistant(assistantInput())
+    const draft = await service.createTeamDraft({
+      name: 'Routed Team',
+      members: [
+        { assistantId: assistant.id, role: 'leader' },
+        { assistantId: assistant.id, role: 'member' },
+        { assistantId: assistant.id, role: 'member' },
+      ],
+    })
+    await store.updateTeam(draft.id, team => ({ ...team, state: 'active' }))
+    const team = service.getTeam(draft.id)
+    const [first, second] = Object.values(team.members).filter(member => member.role === 'member')
+    const teamRuntime = new TeamRuntime(ctx, config, service)
+    const runtime = runtimeInternals(teamRuntime)
+    const { conversationId } = await ownLeader(agents, service, team.id, fakeAgent())
+    await ownMember(service, teamRuntime, team.id, first!.id, fakeAgent(), conversationId)
+    await ownMember(service, teamRuntime, team.id, second!.id, fakeAgent(), conversationId)
+
+    // Even with direct member chat on, one member cannot reach another: the
+    // Leader is the single voice the team coordinates through.
+    expect(team.directMemberChat).toBe(true)
+    await expect(runtime.commands.sendMemberMessage(
+      team.id, conversationId, first!.id, second!.id, '直接找你了',
+    )).rejects.toThrow('Members may message only the Leader')
+
+    // Both directions to the Leader still work.
+    await expect(runtime.commands.sendMemberMessage(
+      team.id, conversationId, first!.id, team.leaderSlotId, '回报 Leader',
+    )).resolves.toMatchObject({ deliveryState: 'delivered' })
+    await expect(runtime.commands.sendMemberMessage(
+      team.id, conversationId, team.leaderSlotId, second!.id, '派活给成员',
+    )).resolves.toMatchObject({ deliveryState: 'delivered' })
+  })
+
   it('records task dependencies and refuses ones that cannot be run', async () => {
     const { ctx, service, store, agents } = createHarness()
     const assistant = await service.createAssistant(assistantInput())

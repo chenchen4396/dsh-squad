@@ -167,7 +167,11 @@ export function registerTeamTools(
   })))
   disposers.push(agentCtx.tools.register(defineTool({
     name: 'team_send_message',
-    description: 'Send a message to another member in this team and wake that member.',
+    description: [
+      'Send a message in this team and wake its recipient.',
+      'A member may message only the Leader; the Leader may message any member.',
+      'Members reach each other through the Leader, which relays what one needs the other to know.',
+    ].join(' '),
     parameters: {
       recipientSlotId: { type: 'string', required: true, description: 'Recipient member slot id.' },
       content: { type: 'string', required: true, description: 'Message content.' },

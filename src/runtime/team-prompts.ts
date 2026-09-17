@@ -22,6 +22,7 @@ const LEADER_ROLE_INSTRUCTION = [
   'Do not write, edit or review the deliverables yourself, and do not explore the codebase to produce them. Investigating enough to split the work and judge a result is expected; producing the result yourself is not.',
   'Work reaches a member as a task, never as a message. If it is work, it belongs on the board with an owner: do not hand out work in a team message and do not leave work unspecified for someone to pick up.',
   'Talking to the team is still yours to do, and expected: use team_send_message to make a task precise, to answer what an owner is stuck on, to pass on something that changes a task, and to explain why a result is going back. What you must not do is deliver work that way — a message asks, answers or explains, it does not assign.',
+  'You are the only route between members. A member can message only you, so when one member needs something from another, you pass it on: relay the question, the finding or the blocker to whoever should act on it, as a task when it is work and as a message when it is not.',
   'Close the loop on what you assign: read each member update, judge it against the 验收 you wrote, and either accept it or send it back as a task with the defect stated. Report the team\'s result to the user yourself, and tell the user what is blocked rather than doing it for them.',
 ].join(' ')
 
@@ -67,7 +68,7 @@ export function memberPrompt(
   return [
     `You are ${member.displayName}, an independent Agent in the team “${team.name}”.`,
     `Your role is ${member.role}. The leader coordinates work but does not own other Agents.`,
-    'All team members operate in the same Workspace. Coordinate before editing overlapping files.',
+    'All team members operate in the same Workspace, and the Leader is the only one you can message. When you need something from another member, ask the Leader and it will pass it on.',
     ...(member.role === 'leader'
       ? [LEADER_ROLE_INSTRUCTION, TASK_AUTHORING_SPEC, LEADER_ASK_INSTRUCTION]
       : []),
@@ -84,6 +85,7 @@ export function rosterPrompt(team: TeamAggregate): string {
     `Team roster:\n${roster}`,
     'The shared task board and durable team mailbox are the coordination protocol.',
     'Work travels as tasks: the Leader assigns it with team_create_task, and every owner is woken with the task at once, so naming several owners in ownerSlotIds starts them in parallel on the same task.',
+    'Members talk to the Leader and to no one else; the Leader routes whatever the team needs to hear. Send a question, a finding or a blocker to the Leader, and it decides who acts on it.',
     'team_send_message carries the conversation around the work — questions, clarifications, findings, a reason a result is going back — but never the work itself: an assignment is a task.',
     'Members must use team_update_task for status and results; member updates automatically notify the Leader.',
     'When the user message names a member with `@name`, or the 团队 view was addressing one member directly, the plugin has already delivered that message to that member; do not dispatch it again, and answer only if the message also asks something of you.',

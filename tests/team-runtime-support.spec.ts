@@ -72,6 +72,22 @@ describe('team runtime support', () => {
     expect(memberPrompt(team, coder, 'Implement.')).not.toContain('You arrange the work')
   })
 
+  it('says the Leader is the only route between members', () => {
+    const leader = member('leader-slot', 'Code Leader', 'leader')
+    const coder = member('coder-slot', 'Coder', 'member')
+    const team = {
+      id: 'team-1',
+      name: 'Compiler Team',
+      leaderSlotId: leader.id,
+      members: { [leader.id]: leader, [coder.id]: coder },
+    } as unknown as TeamAggregate
+
+    // Both sides are told, so neither relies on a channel the other does not use.
+    expect(memberPrompt(team, leader, 'Coordinate.')).toContain('You are the only route between members')
+    expect(memberPrompt(team, coder, 'Implement.')).toContain('the Leader is the only one you can message')
+    expect(rosterPrompt(team)).toContain('Members talk to the Leader and to no one else')
+  })
+
   it('keeps the team channel for conversation while work travels as tasks', () => {
     const leader = member('leader-slot', 'Code Leader', 'leader')
     const team = {

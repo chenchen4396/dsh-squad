@@ -296,8 +296,15 @@ export class TeamCommandHandler {
     if (sender === undefined || recipient === undefined) {
       throw new AgentTeamError('MEMBER_NOT_FOUND', 'Sender or recipient is not a current team member')
     }
-    if (senderSlotId !== team.leaderSlotId && recipientSlotId !== team.leaderSlotId && !team.directMemberChat) {
-      throw new AgentTeamError('INVALID_REQUEST', 'Direct member-to-member messages are disabled')
+    // Members talk to the Leader, and the Leader routes. A member that could
+    // message another directly would act on a peer's account of the work rather
+    // than on the task the Leader assigned, and the Leader would stop being the
+    // one voice the team coordinates through.
+    if (senderSlotId !== team.leaderSlotId && recipientSlotId !== team.leaderSlotId) {
+      throw new AgentTeamError(
+        'INVALID_REQUEST',
+        'Members may message only the Leader. Send the request to the Leader, and it will pass it on.',
+      )
     }
     const content = requireMessageContent(rawContent)
     const relay = createUserMessage({

@@ -4200,3 +4200,161 @@ textarea.input {
   border: none;
   border-top: 1px solid var(--dsw-alias-border-l1);
 }
+
+/*
+ * Assistant template card.
+ *
+ * The card answers three questions in order — which assistant, on what model
+ * and with what power, and how much it carries — so a reader scans it instead
+ * of reading four equal lines of joined lists.
+ */
+.assistantCardHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.assistantCardAvatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.assistantCardIdentity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.assistantCardName {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.assistantCardModel {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsw-font-markdown-code-block-small, monospace);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.assistantCardDescription {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.assistantCardFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.assistantCardFact {
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* Permission is the one fact with a consequence, so it is not drawn like the rest. */
+.assistantCardFact[data-tone='permission'] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 40%, var(--dsw-alias-border-l2));
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-primary);
+}
+
+.assistantCardCounts {
+  display: flex;
+  gap: 18px;
+  margin: 2px 0 0;
+}
+
+.assistantCardCount {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.assistantCardCount dt {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.assistantCardCount dd {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.assistantCardCount dd[data-empty='true'] {
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+}
+
+/* The editor reads as a few decisions rather than one long grid of fields. */
+.assistantFormSections {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.assistantFormSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.assistantFormSectionHead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.assistantFormSectionTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.assistantFormSectionHint {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* A writable level is worth noticing while it is being chosen. */
+.hint[data-tone='warn'] {
+  color: var(--dsw-alias-state-warn-primary);
+}

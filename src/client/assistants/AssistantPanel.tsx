@@ -1,4 +1,4 @@
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button,
@@ -57,16 +57,6 @@ export function AssistantPanel({
   const [editingAssistant, setEditingAssistant] = useState<AssistantView>()
   const [builderOpen, setBuilderOpen] = useState(false)
   const [assistantSaving, setAssistantSaving] = useState(false)
-  // Cards name the documents an assistant loads, so the catalog is resolved
-  // here rather than only inside the editor.
-  const [ruleDocuments, setRuleDocuments] = useState<RuleDocumentView[]>([])
-  useEffect(() => {
-    let active = true
-    void callAgentTeam('assistant.ruleDocuments.list', undefined)
-      .then(value => { if (active) setRuleDocuments(value.items) })
-      .catch(() => undefined)
-    return () => { active = false }
-  }, [assistants])
   return (
     <section className={css.section}>
       <div className={css.sectionHeader}>
@@ -95,7 +85,6 @@ export function AssistantPanel({
                 <AssistantCard
                   key={assistant.id}
                   assistant={assistant}
-                  ruleDocuments={ruleDocuments}
                   onEdit={() => { setEditingAssistant(assistant) }}
                   onChanged={onChanged}
                 />
@@ -638,6 +627,46 @@ function AssistantBuilderConversation({ catalog }: { catalog: CatalogView | unde
   )
 }
 
+/** One titled group of the editor, so a long form reads as a few decisions. */
+function FormSection({
+  title,
+  description,
+  children,
+}: {
+  title: string
+  description: string
+  children: ReactNode
+}): JSX.Element {
+  return (
+    <section className={css.assistantFormSection}>
+      <header className={css.assistantFormSectionHead}>
+        <h3 className={css.assistantFormSectionTitle}>{title}</h3>
+        <p className={css.assistantFormSectionHint}>{description}</p>
+      </header>
+      {children}
+    </section>
+  )
+}
+
+/** The consequence of a permission preset, in the terms a member works in. */
+function permissionHint(presetId: string): string {
+  switch (presetId) {
+    case 'read-only':
+      return '只能读取与检索，任何写入都会先向你申请；评审或调研类角色建议用这一档。'
+    case 'workspace-write':
+      return '可以直接修改工作区文件，无需逐次申请；默认档位，实现类角色用这一档。'
+    case 'danger-full-access':
+      return '可以修改工作区之外的路径并执行命令，不经申请；只在确实需要时才选。'
+    default:
+      return '由 Harness 定义该档位允许的操作。'
+  }
+}
+
+/** Only a writable level needs the reader's attention while choosing. */
+function permissionTone(presetId: string): 'warn' | undefined {
+  return presetId === 'workspace-write' || presetId === 'danger-full-access' ? 'warn' : undefined
+}
+
 function assistantBuilderStateLabel(state: AssistantBuilderConversationSummary['state']): string {
   if (state === 'completed') return '已创建'
   if (state === 'in_progress') return '配置中'
@@ -766,12 +795,10 @@ function RuleDocumentNodeRow({
 
 function AssistantCard({
   assistant,
-  ruleDocuments,
   onEdit,
   onChanged,
 }: {
   assistant: AssistantView
-  ruleDocuments: RuleDocumentView[]
   onEdit: () => void
   onChanged: () => Promise<void>
 }): JSX.Element {
@@ -820,25 +847,47 @@ function AssistantCard({
             onEdit()
           }}
         >
-          <strong>{assistant.name}</strong>
-          <span className={css.muted}>{assistant.provider} / {assistant.model}</span>
-          <span className={css.muted}>
-            Preset: {assistant.agentPresetId} · 权限: {PERMISSION_LABELS[assistant.permissionPresetId] ?? assistant.permissionPresetId} · 思考模式：{assistant.reasoningEffort ?? '模型默认'}
-          </span>
-          <span className={css.muted}>
-            Skills: {assistant.skillAllowlist.length > 0 ? assistant.skillAllowlist.join('、') : '未选择'}
-          </span>
-          <span className={css.muted}>
-            MCP: {assistant.mcpServers.length > 0 ? assistant.mcpServers.join('、') : '未选择'}
-          </span>
-          <span className={css.muted}>
-            规则文档: {assistant.ruleDocumentAllowlist.length === 0
-              ? '未选择'
-              : assistant.ruleDocumentAllowlist
-                  .map(id => ruleDocuments.find(document => document.id === id)?.title ?? '已删除的文档')
-                  .join('、')}
-          </span>
-          {assistant.description && <p className={css.description}>{assistant.description}</p>}
+          <div className={css.assistantCardHead}>
+            <span className={css.assistantCardAvatar} aria-hidden="true">
+              {assistant.name.trim().slice(0, 1).toUpperCase() || 'AI'}
+            </span>
+            <span className={css.assistantCardIdentity}>
+              <strong className={css.assistantCardName}>{assistant.name}</strong>
+              {/* The model is the one fact a reader scans for, so it sits on the
+                  name line instead of in a list of four equal strings. */}
+              <span className={css.assistantCardModel}>{assistant.model}</span>
+            </span>
+          </div>
+          {assistant.description && <p className={css.assistantCardDescription}>{assistant.description}</p>}
+          <div className={css.assistantCardFacts}>
+            <span className={css.assistantCardFact} data-tone="permission">
+              {PERMISSION_LABELS[assistant.permissionPresetId] ?? assistant.permissionPresetId}
+            </span>
+            <span className={css.assistantCardFact}>{assistant.agentPresetId}</span>
+            <span className={css.assistantCardFact}>{assistant.reasoningEffort ?? '思考默认'}</span>
+          </div>
+          {/* Counts, not names: the editor is where the lists belong, and five
+              joined lists turn one card into a paragraph. */}
+          <dl className={css.assistantCardCounts}>
+            <div className={css.assistantCardCount}>
+              <dt>Skills</dt>
+              <dd data-empty={assistant.skillAllowlist.length === 0 ? 'true' : undefined}>
+                {assistant.skillAllowlist.length}
+              </dd>
+            </div>
+            <div className={css.assistantCardCount}>
+              <dt>MCP</dt>
+              <dd data-empty={assistant.mcpServers.length === 0 ? 'true' : undefined}>
+                {assistant.mcpServers.length}
+              </dd>
+            </div>
+            <div className={css.assistantCardCount}>
+              <dt>规则文档</dt>
+              <dd data-empty={assistant.ruleDocumentAllowlist.length === 0 ? 'true' : undefined}>
+                {assistant.ruleDocumentAllowlist.length}
+              </dd>
+            </div>
+          </dl>
         </div>
         <div className={css.actions}>
           <Button variant="outline" size="sm" disabled={busy} onClick={onEdit}>编辑</Button>
@@ -1194,9 +1243,15 @@ function AssistantForm({
 
   return (
     <form id={formId} onSubmit={(event) => { void submit(event) }} className={`${css.form} ${css.assistantForm}`}>
+      <div className={css.assistantFormSections}>
+      <FormSection title="基本信息" description="这个助手是什么、做什么用。">
       <div className={css.formGrid}>
         <Field label="名称"><input required value={name} onChange={event => { setName(event.target.value) }} className={css.input} /></Field>
         <Field label="说明"><input value={description} onChange={event => { setDescription(event.target.value) }} className={css.input} /></Field>
+      </div>
+      </FormSection>
+      <FormSection title="模型" description="用哪个 Provider、哪个模型，以及它的思考档位。">
+      <div className={css.formGrid}>
         <Field label="Provider">
           <select required value={provider} onChange={event => { setProvider(event.target.value) }} className={css.input}>
             <option value="">请选择</option>
@@ -1232,12 +1287,16 @@ function AssistantForm({
           </Field>
         )}
         {modelCapabilities.error && <span className={conversationCss.composerError}>{modelCapabilities.error}</span>}
+      </div>
+      </FormSection>
+      <FormSection title="执行" description="成员以什么身份运行，以及它能改到什么范围。">
+      <div className={css.formGrid}>
         <Field label="Agent Preset">
           <select required value={agentPresetId} onChange={event => { setAgentPresetId(event.target.value) }} className={css.input}>
             {presets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
         </Field>
-        <Field label="权限预设">
+        <Field label="执行权限">
           <select required value={permissionPresetId} onChange={event => { setPermissionPresetId(event.target.value) }} className={css.input}>
             {permissions.map(item => (
               <option key={item.value} value={item.value}>
@@ -1245,7 +1304,16 @@ function AssistantForm({
               </option>
             ))}
           </select>
+          {/* What the level actually permits, said where it is chosen: the
+              preset name alone does not tell a reader what a member may do. */}
+          <span className={css.hint} data-tone={permissionTone(permissionPresetId)}>
+            {permissionHint(permissionPresetId)}
+          </span>
         </Field>
+      </div>
+      </FormSection>
+      <FormSection title="能力" description="这个助手长期遵守的规则，以及它能调用的工具与文档。">
+      <div className={css.formGrid}>
         <Field label="助手规则（可选）" className={css.fullWidth ?? ''}>
           <textarea
             value={instructions}
@@ -1390,6 +1458,8 @@ function AssistantForm({
           </div>
           <span className={css.hint}>MCP 连接和密钥由 Harness Profile/Preset 统一管理；运行时只向助手开放已选 Server 的工具。</span>
         </Field>
+      </div>
+      </FormSection>
       </div>
       {error && <div role="alert" className={css.inlineError}>{error}</div>}
     </form>

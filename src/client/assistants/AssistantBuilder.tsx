@@ -24,6 +24,7 @@ import { AnimatedModal } from '../shared.js'
 import { ConversationNodeView } from '../workbench/ConversationNodeView.js'
 import { PendingInteractionCard } from '../workbench/PendingInteractionCard.js'
 import conversationCss from '../workbench/ConversationColumn.module.css'
+import { errorText } from '../error-text.js'
 
 /** The chat that designs an assistant, and the history of past ones. */
 
@@ -102,7 +103,7 @@ export function AssistantBuilderConversation({ catalog }: { catalog: CatalogView
       setModelSelectionDirty(false)
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setLoading(false)
     }
@@ -176,7 +177,7 @@ export function AssistantBuilderConversation({ catalog }: { catalog: CatalogView
       await loadHistory()
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       sendInFlight.current = false
       setSending(false)
@@ -189,7 +190,7 @@ export function AssistantBuilderConversation({ catalog }: { catalog: CatalogView
       await callAgentTeam('assistant.builder.stop', { sessionId: conversation.sessionId })
       await load(conversation.sessionId)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     }
   }
 
@@ -214,7 +215,7 @@ export function AssistantBuilderConversation({ catalog }: { catalog: CatalogView
       setModelSelectionDirty(false)
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setApplyingModel(false)
     }
@@ -232,7 +233,7 @@ export function AssistantBuilderConversation({ catalog }: { catalog: CatalogView
       setModelSelectionDirty(false)
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setLoading(false)
     }
@@ -265,7 +266,7 @@ export function AssistantBuilderConversation({ catalog }: { catalog: CatalogView
       setArchiveCandidate(undefined)
       setError(undefined)
     } catch (cause) {
-      setArchiveError(cause instanceof Error ? cause.message : String(cause))
+      setArchiveError(errorText(cause))
     } finally {
       setArchivingSessionId(undefined)
       setLoading(false)

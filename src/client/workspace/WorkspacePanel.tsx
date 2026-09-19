@@ -18,6 +18,7 @@ import css from './WorkspacePanel.module.css'
 import { WorkspaceChanges } from './WorkspaceChanges.js'
 import { WorkspaceDiffDialog, type WorkspaceDiffTarget } from './WorkspaceDiffDialog.js'
 import { WorkspaceTreeRow } from './WorkspaceTreeRow.js'
+import { errorText } from '../error-text.js'
 
 export function WorkspacePanel({
   team,
@@ -60,7 +61,7 @@ export function WorkspacePanel({
       setFileError(undefined)
     } catch (cause) {
       if (generation !== fileLoadGeneration.current) return
-      setFileError(cause instanceof Error ? cause.message : String(cause))
+      setFileError(errorText(cause))
     } finally {
       if (generation === fileLoadGeneration.current) setFileRefreshing(false)
     }
@@ -79,7 +80,7 @@ export function WorkspacePanel({
       setGitError(undefined)
     } catch (cause) {
       if (generation !== gitLoadGeneration.current) return
-      setGitError(cause instanceof Error ? cause.message : String(cause))
+      setGitError(errorText(cause))
     } finally {
       if (generation === gitLoadGeneration.current) setGitRefreshing(false)
     }

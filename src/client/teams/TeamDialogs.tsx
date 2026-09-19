@@ -7,6 +7,7 @@ import css from '../AgentTeam.module.css'
 import { orderedMembers } from '../../domain/team-selectors.js'
 import { assistantForMember } from '../member-assistant.js'
 import { AnimatedModal, Field } from '../shared.js'
+import { errorText } from '../error-text.js'
 
 /** Adding a member to a team, and cloning a team's whole arrangement. */
 export function AddTeamMemberDialog({
@@ -39,7 +40,7 @@ export function AddTeamMemberDialog({
       onClose()
       await onChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setAddingAssistantId(undefined)
     }
@@ -150,7 +151,7 @@ export function CloneTeamDialog({
       onClose()
       await onCreated(draft.id)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setSaving(false)
     }

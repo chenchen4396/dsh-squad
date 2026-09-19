@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ModelCapabilitiesView } from '../transport/contracts.js'
 import { callAgentTeam } from './api.js'
+import { errorText } from './error-text.js'
 
 export interface ModelCapabilitiesState {
   value?: ModelCapabilitiesView
@@ -26,7 +27,7 @@ export function useModelCapabilities(provider: string, model: string): ModelCapa
         if (!active) return
         setState({
           loading: false,
-          error: cause instanceof Error ? cause.message : String(cause),
+          error: errorText(cause),
         })
       })
     return () => { active = false }

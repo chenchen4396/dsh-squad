@@ -15,6 +15,7 @@ import type { PendingAction } from '../pending-actions.js'
 import { roomSpeech } from '../room-feed.js'
 import { cacheRoom, cachedRoom } from '../view-cache.js'
 import css from '../AgentTeam.module.css'
+import { errorText } from '../error-text.js'
 
 function clockOf(time: number): string {
   return new Date(time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -124,7 +125,7 @@ export function MeetingRoom({
       })
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     }
   }, [team.id, conversationId])
 
@@ -149,7 +150,7 @@ export function MeetingRoom({
       })
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setLoadingOlder(false)
     }

@@ -13,6 +13,7 @@ const LEADER_WAIT_NOTE = `已交给 Leader 裁决：成员只通过 Leader 说�
 /** «替我审批»: the card is a status line only — the Leader answers it, not the reader. */
 const DELEGATED_NOTE = '本会话已开启「替我审批」：Leader 全权处理，这张卡不会开放给你。'
 import css from './ConversationColumn.module.css'
+import { errorText } from '../error-text.js'
 
 export function PendingInteractionCard({
   interaction,
@@ -64,7 +65,7 @@ export function PendingInteractionCard({
       setSubmitted(true)
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setSubmitting(false)
     }

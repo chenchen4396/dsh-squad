@@ -4,6 +4,7 @@ import type { AssistantView, CatalogView } from '../../transport/contracts.js'
 import { callAgentTeam } from '../api.js'
 import css from '../AgentTeam.module.css'
 import { Empty, Field } from '../shared.js'
+import { errorText } from '../error-text.js'
 
 interface DraftMember {
   key: string
@@ -73,7 +74,7 @@ export function TeamForm({
       // Workspace its members run in, so starting here would have nowhere to go.
       await onCreated(draft.id)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setSaving(false)
     }

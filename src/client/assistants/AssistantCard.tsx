@@ -5,6 +5,7 @@ import { callAgentTeam } from '../api.js'
 import css from '../AgentTeam.module.css'
 import { PERMISSION_LABELS } from '../labels.js'
 import { AnimatedModal } from '../shared.js'
+import { errorText } from '../error-text.js'
 
 /** One assistant template, with the actions that act on the template itself. */
 
@@ -27,7 +28,7 @@ export function AssistantCard({
       await callAgentTeam('assistant.clone', { id: assistant.id, name: `${assistant.name} Copy` })
       await onChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setBusy(false)
     }
@@ -41,7 +42,7 @@ export function AssistantCard({
       setError(undefined)
       await onChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setBusy(false)
     }

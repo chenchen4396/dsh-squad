@@ -5,6 +5,7 @@ import { AnimatedModal, Field } from '../shared.js'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from '../AgentTeam.module.css'
 import conversationCss from '../workbench/ConversationColumn.module.css'
+import { errorText } from '../error-text.js'
 
 /** The shape check a file must pass before it is offered for import. */
 function readBundle(text: string): SquadBundle {
@@ -63,7 +64,7 @@ export function BundlePanel({ teamId }: { teamId?: string }): JSX.Element {
       anchor.click()
       URL.revokeObjectURL(url)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setBusy(false)
     }
@@ -76,7 +77,7 @@ export function BundlePanel({ teamId }: { teamId?: string }): JSX.Element {
     try {
       setPending(readBundle(await file.text()))
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     }
   }
 
@@ -89,7 +90,7 @@ export function BundlePanel({ teamId }: { teamId?: string }): JSX.Element {
       setPending(undefined)
       setSummary(result)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setBusy(false)
     }

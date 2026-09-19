@@ -15,6 +15,7 @@ import {
 import { cachedBinding, cacheBinding } from '../view-cache.js'
 import css from '../AgentTeam.module.css'
 import type { SessionBindingView, TeamView } from '../../transport/contracts.js'
+import { errorText } from '../error-text.js'
 
 /**
  * The team switch, beside the model selector.
@@ -44,7 +45,7 @@ export function ComposerTeamControl({ sessionId }: { sessionId: string }): JSX.E
       setBinding(current)
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     }
   }, [sessionId])
 
@@ -70,7 +71,7 @@ export function ComposerTeamControl({ sessionId }: { sessionId: string }): JSX.E
       setOpen(false)
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setBusy(false)
     }
@@ -85,7 +86,7 @@ export function ComposerTeamControl({ sessionId }: { sessionId: string }): JSX.E
       setOpen(false)
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setBusy(false)
     }
@@ -100,7 +101,7 @@ export function ComposerTeamControl({ sessionId }: { sessionId: string }): JSX.E
       setBinding(updated)
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setBusy(false)
     }

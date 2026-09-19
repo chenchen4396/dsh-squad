@@ -19,6 +19,7 @@ import { agoLabel } from '../native-locale.js'
 import { AnimatedModal } from '../shared.js'
 import { openMemberSession, openTeam, setMemberComposerTarget } from '../store.js'
 import { isTeamExecuting, runtimeStateDot } from '../team-status.js'
+import { errorText } from '../error-text.js'
 
 export function TeamDetail({
   team,
@@ -54,7 +55,7 @@ export function TeamDetail({
       setError(undefined)
       await onChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setBusy(false)
     }
@@ -72,7 +73,7 @@ export function TeamDetail({
       setError(undefined)
       await onChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setBusy(false)
     }
@@ -89,7 +90,7 @@ export function TeamDetail({
       setError(undefined)
       await onChanged()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setBusy(false)
     }

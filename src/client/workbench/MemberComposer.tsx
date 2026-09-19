@@ -4,6 +4,7 @@ import { callAgentTeam } from '../api.js'
 import { addressedMemberContent } from '../member-composer.js'
 import type { MemberComposerTarget } from '../store.js'
 import css from '../AgentTeam.module.css'
+import { errorText } from '../error-text.js'
 
 /**
  * The composer that stands in for the Harness composer while the 团队 view is
@@ -40,7 +41,7 @@ export function MemberComposer({ matched }: { matched: MemberComposerTarget }): 
       setDraft('')
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setBusy(false)
     }

@@ -8,6 +8,7 @@ import { isTeamExecuting } from '../team-status.js'
 import { TeamWorkbench } from '../teams/TeamWorkbench.js'
 import css from '../AgentTeam.module.css'
 import type { SessionBindingView } from '../../transport/contracts.js'
+import { errorText } from '../error-text.js'
 
 /**
  * The 团队 view of one Harness conversation.
@@ -42,7 +43,7 @@ export function AgentTeamSessionView({ sessionId }: { sessionId: string }): JSX.
       // to keep, so only that one reports.
       setBinding(current => {
         if (current === undefined) {
-          setActionError(cause instanceof Error ? cause.message : String(cause))
+          setActionError(errorText(cause))
         }
         return current
       })
@@ -74,7 +75,7 @@ export function AgentTeamSessionView({ sessionId }: { sessionId: string }): JSX.
       setActionError(undefined)
       await load()
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : String(cause))
+      setActionError(errorText(cause))
       throw cause
     }
   }
@@ -87,7 +88,7 @@ export function AgentTeamSessionView({ sessionId }: { sessionId: string }): JSX.
       setActionError(undefined)
       await load()
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : String(cause))
+      setActionError(errorText(cause))
       throw cause
     }
   }

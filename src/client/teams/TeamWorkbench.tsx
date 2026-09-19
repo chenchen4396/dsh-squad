@@ -26,6 +26,7 @@ import { openTeams, setMemberComposerTarget } from '../store.js'
 import { isTeamExecuting, runtimeStateDot } from '../team-status.js'
 import { MeetingRoom } from '../workbench/MeetingRoom.js'
 import { WorkspacePanel } from '../workspace/WorkspacePanel.js'
+import { errorText } from '../error-text.js'
 
 export function TeamWorkbench({
   team,
@@ -99,7 +100,7 @@ export function TeamWorkbench({
       setError(undefined)
     } catch (cause) {
       if (generation !== loadGeneration.current) return
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     }
   }, [team.id, conversationId])
 
@@ -175,7 +176,7 @@ export function TeamWorkbench({
       await onChanged()
       await load()
     } catch (cause) {
-      setMemberActionError(cause instanceof Error ? cause.message : String(cause))
+      setMemberActionError(errorText(cause))
     } finally {
       setMemberActionBusy(false)
     }
@@ -251,7 +252,7 @@ export function TeamWorkbench({
         })
       setError(undefined)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     }
   }
   return (

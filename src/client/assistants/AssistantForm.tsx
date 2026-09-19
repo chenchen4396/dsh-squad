@@ -14,6 +14,7 @@ import { PERMISSION_LABELS } from '../labels.js'
 import { defaultReasoningLabel, useModelCapabilities } from '../model-reasoning.js'
 import { Field } from '../shared.js'
 import conversationCss from '../workbench/ConversationColumn.module.css'
+import { errorText } from '../error-text.js'
 
 /**
  * Creating and editing an assistant template.
@@ -145,7 +146,7 @@ export function AssistantForm({
         if (!active) return
         setAvailableSkills([])
         setSelectedSkills([])
-        setSkillsError(cause instanceof Error ? cause.message : String(cause))
+        setSkillsError(errorText(cause))
       })
       .finally(() => {
         if (active) setSkillsLoading(false)
@@ -172,7 +173,7 @@ export function AssistantForm({
         if (!active) return
         setAvailableMcpServers([])
         setSelectedMcpServers([])
-        setMcpError(cause instanceof Error ? cause.message : String(cause))
+        setMcpError(errorText(cause))
       })
       .finally(() => {
         if (active) setMcpLoading(false)
@@ -209,7 +210,7 @@ export function AssistantForm({
       }
       await onSaved()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      setError(errorText(cause))
     } finally {
       setSaving(false)
     }

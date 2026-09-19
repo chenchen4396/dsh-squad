@@ -7,6 +7,7 @@ import { Field } from '../shared.js'
 import { buildRuleDocumentTree } from '../rule-documents.js'
 import { RuleDocumentNodeRow } from './RuleDocumentNodeRow.js'
 import conversationCss from '../workbench/ConversationColumn.module.css'
+import { errorText } from '../error-text.js'
 
 /**
  * Folder picking is not part of the standard React input typings, so the
@@ -55,7 +56,7 @@ export function RuleDocumentPicker({
       setRuleDocumentsError(undefined)
       return value.items
     } catch (cause) {
-      setRuleDocumentsError(cause instanceof Error ? cause.message : String(cause))
+      setRuleDocumentsError(errorText(cause))
       return []
     } finally {
       setRuleDocumentsLoading(false)
@@ -107,7 +108,7 @@ export function RuleDocumentPicker({
         setRuleDocumentLimit(value.limitBytes)
         importedPaths.add(relative)
       } catch (cause) {
-        failures.push(`${relative}：${cause instanceof Error ? cause.message : String(cause)}`)
+        failures.push(`${relative}：${errorText(cause)}`)
       }
     }
     setRuleDocuments(latest)
@@ -143,7 +144,7 @@ export function RuleDocumentPicker({
       const document = await callAgentTeam('assistant.ruleDocuments.get', { id })
       setRuleDocumentPreview(current => ({ ...current, [id]: document.content }))
     } catch (cause) {
-      setRuleDocumentsError(cause instanceof Error ? cause.message : String(cause))
+      setRuleDocumentsError(errorText(cause))
     } finally {
       setRuleDocumentBusy(undefined)
     }
@@ -162,7 +163,7 @@ export function RuleDocumentPicker({
       })
       setConfirmingRuleDocument(undefined)
     } catch (cause) {
-      setRuleDocumentsError(cause instanceof Error ? cause.message : String(cause))
+      setRuleDocumentsError(errorText(cause))
     } finally {
       setRuleDocumentBusy(undefined)
     }

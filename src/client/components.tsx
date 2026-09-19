@@ -5,6 +5,7 @@ import {
   IconChevronLeftOutline14,
   Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { errorText } from './error-text.js'
 import type { SettingsSectionOwnerProps } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { AssistantPanel } from './assistants/AssistantPanel.js'
 import { BundlePanel } from './assistants/BundlePanel.js'
@@ -115,7 +116,7 @@ export function useAgentTeamData(includeTeams: boolean, active = true): {
     }
     const failures: string[] = []
     const report = (cause: unknown): void => {
-      failures.push(cause instanceof Error ? cause.message : String(cause))
+      failures.push(errorText(cause))
     }
     const requests: Array<Promise<void>> = []
     if (wantCatalog) {

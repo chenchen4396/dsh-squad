@@ -4,6 +4,7 @@ import type { WorkspaceGitChangeView, WorkspaceGitDiffView } from '../../transpo
 import { callAgentTeam } from '../api.js'
 import { AnimatedModal } from '../shared.js'
 import css from './WorkspacePanel.module.css'
+import { errorText } from '../error-text.js'
 
 /** One change the reader asked to see, and which side of the index it is on. */
 export interface WorkspaceDiffTarget {
@@ -49,7 +50,7 @@ export function WorkspaceDiffDialog({
     }).then(next => {
       if (active) setDiff(next)
     }).catch(cause => {
-      if (active) setError(cause instanceof Error ? cause.message : String(cause))
+      if (active) setError(errorText(cause))
     }).finally(() => {
       if (active) setLoading(false)
     })

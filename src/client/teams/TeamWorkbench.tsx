@@ -11,21 +11,19 @@ import type {
 import { callAgentTeam, subscribeAgentTeamConversation } from '../api.js'
 import css from '../AgentTeam.module.css'
 import { orderedMembers } from '../../domain/team-selectors.js'
-import { assistantForMember } from '../member-assistant.js'
+import { MemberColumn } from './MemberColumn.js'
 import { TaskFlowChart } from './TaskFlowChart.js'
 import { AddTeamMemberDialog, CloneTeamDialog } from './TeamDialogs.js'
 import { CrownIcon } from '../icons/CrownIcon.js'
 import { TeamDetail } from './TeamDetail.js'
 import { mergeMemberConversation, mergeWorkbenchLoad, prependMemberPage } from '../conversation-nodes.js'
-import { memberModelLabel, memberStatusLabel } from '../labels.js'
-import type { MemberModelLabel } from '../labels.js'
+import { memberStatusLabel } from '../labels.js'
 import { visibleMemberSlots } from '../member-visibility.js'
 import { pendingActionsOf } from '../pending-actions.js'
 import { cachedWorkbench, cacheWorkbench } from '../view-cache.js'
 import { AnimatedModal } from '../shared.js'
-import { openMemberSession, openTeams, setMemberComposerTarget } from '../store.js'
+import { openTeams, setMemberComposerTarget } from '../store.js'
 import { isTeamExecuting, runtimeStateDot } from '../team-status.js'
-import { ConversationColumn } from '../workbench/ConversationColumn.js'
 import { MeetingRoom } from '../workbench/MeetingRoom.js'
 import { WorkspacePanel } from '../workspace/WorkspacePanel.js'
 
@@ -256,36 +254,6 @@ export function TeamWorkbench({
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
-
-  /**
-   * Open one member's own Session, where the Harness composer addresses that
-   * member alone.
-   *
-   * A member is a child Session of this one, so "talk to SE" is a navigation,
-   * not a relay: the Leader is the Session's own Agent, and any composer shown
-   * on this Session reaches it. A member that is not running yet has no Session
-   * to open, so the action is offered only once it has one.
-   */
-  function openSessionFor(
-    member: TeamView['members'][string],
-    bySlot: Map<string, MemberConversationView>,
-  ): (() => void) | undefined {
-    if (member.id === team.leaderSlotId) return undefined
-    const sessionId = bySlot.get(member.id)?.sessionId
-    if (sessionId === undefined) return undefined
-    return () => { openMemberSession(sessionId) }
-  }
-
-  /** The model label of one member column, Leader included. */
-  function modelLabelOf(member: TeamView['members'][string]): MemberModelLabel {
-    return memberModelLabel(
-      catalog?.models,
-      member,
-      team.leaderSlotId,
-      assistantForMember(assistants, member),
-    )
-  }
-
   return (
     <div className={css.workbench}>
       <div className={css.workbenchMainPane}>
@@ -418,25 +386,21 @@ export function TeamWorkbench({
               )
             : (
                 <div className={css.conversationGrid} style={{ '--member-columns': visibleMembers.length } as React.CSSProperties}>
-                  {visibleMembers.map(member => {
-                    const openSession = openSessionFor(member, conversations)
-                    return (
-                    <ConversationColumn
+                  {visibleMembers.map(member => (
+                    <MemberColumn
                       key={member.id}
                       team={team}
                       conversationId={conversationId}
                       member={member}
-                      assistant={assistantForMember(assistants, member)}
-                      model={modelLabelOf(member)}
-                      onLoadOlder={() => loadOlder(member.id)}
-                      conversation={conversations.get(member.id)}
-                      onSent={load}
-                      {...(openSession === undefined ? {} : { onOpenSession: openSession })}
+                      assistants={assistants}
+                      catalog={catalog}
+                      conversations={conversations}
                       expanded={expandedSlotId === member.id}
+                      onLoadOlder={() => loadOlder(member.id)}
+                      onSent={load}
                       onExpandedChange={expanded => { setExpandedSlotId(expanded ? member.id : undefined) }}
                     />
-                    )
-                  })}
+                  ))}
                 </div>
               )}
         </div>
@@ -447,19 +411,16 @@ export function TeamWorkbench({
       */}
       {view === 'room' && expandedSlotId !== undefined && focusedMember !== undefined && (
         <div className={css.conversationGrid} style={{ '--member-columns': 1 } as React.CSSProperties}>
-          <ConversationColumn
+          <MemberColumn
             team={team}
             conversationId={conversationId}
             member={focusedMember}
-            assistant={assistantForMember(assistants, focusedMember)}
-            model={modelLabelOf(focusedMember)}
-            onLoadOlder={() => loadOlder(focusedMember.id)}
-            conversation={conversations.get(focusedMember.id)}
-            onSent={load}
-            {...(openSessionFor(focusedMember, conversations) === undefined
-              ? {}
-              : { onOpenSession: openSessionFor(focusedMember, conversations) as () => void })}
+            assistants={assistants}
+            catalog={catalog}
+            conversations={conversations}
             expanded
+            onLoadOlder={() => loadOlder(focusedMember.id)}
+            onSent={load}
             onExpandedChange={expanded => { if (!expanded) setExpandedSlotId(undefined) }}
           />
         </div>

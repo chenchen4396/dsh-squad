@@ -145,3 +145,19 @@ describe('team panels render', () => {
     expect(text(html)).toContain('流程图')
   })
 })
+
+describe('the member column', () => {
+  it('offers opening a member Session only when there is one to open', async () => {
+    const { openSessionFor } = await import('../src/client/teams/MemberColumn.js')
+    const view = team()
+    const leader = view.members[view.leaderSlotId]!
+    // The Leader is the Session the reader is already in; it has no column to
+    // open, and the member grid and the focused room view must agree on that.
+    expect(openSessionFor(view, leader, new Map())).toBeUndefined()
+
+    const member = view.members['slot-se']!
+    expect(openSessionFor(view, member, new Map())).toBeUndefined()
+    const sessions = new Map([['slot-se', { slotId: 'slot-se', sessionId: 'session-se' }]])
+    expect(typeof openSessionFor(view, member, sessions as never)).toBe('function')
+  })
+})

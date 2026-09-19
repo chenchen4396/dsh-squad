@@ -16,6 +16,7 @@ import type { Config } from '../config.js'
 import { AgentTeamError } from '../domain/errors.js'
 import { LiveStreamBuffer } from './live-stream-buffer.js'
 import { memberAgentSetup } from './member-context.js'
+import { installCompositionSections, teamComposition } from './team-composition.js'
 import { MemberRegistry } from './member-registry.js'
 import { OperationQueue } from './operation-queue.js'
 import { PublishCoalescer } from './publish-coalescer.js'
@@ -61,7 +62,6 @@ import {
 } from './team-messages.js'
 import type { RuleDocumentContent } from './rule-documents.js'
 import { identifyMemberAsSubagent } from './member-descriptor.js'
-import { memberPrompt, rosterPrompt } from './team-prompts.js'
 import { sandboxModeOf, withinLeaderAuthority } from './sandbox-authority.js'
 import { registerTeamTools } from './team-tools.js'
 
@@ -1647,62 +1647,46 @@ export class TeamRuntime {
     const agentCtx = agent.ctx
     const disposers: Array<() => void> = []
     try {
-      const identitySection = `agent-team:identity:${member.id}`
-      const rosterSection = `agent-team:roster:${team.id}`
-      disposers.push(agentCtx.systemPrompt.section({
-        name: identitySection,
-        order: 10,
-        text: () => {
-          const latest = this.service.getTeam(team.id)
-          const latestMember = latest.members[latest.leaderSlotId]
-          return latestMember === undefined
-            ? 'This team membership is no longer active.'
-            : memberPrompt(
-              latest,
-              latestMember,
-              this.service.assistantForMember(latestMember).instructions,
-              this.rulesFor(latestMember),
-            )
+      const composition = teamComposition(        {
+          service: this.service,
+          commands: this.commands,
+          rulesFor: (target: TeamMemberSlot) => this.rulesFor(target),
+          assertToolIdentity: (agent: Agent | undefined, teamId: string, convId: string, slotId: string) => {
+            this.assertToolIdentity(agent, teamId, convId, slotId)
+          },
+        },         {
+          team,
+          conversationId: conversation.id,
+          slotId: member.id,
+          // The Leader slot moves when the team changes leader, so it is read
+          // when a tool is called rather than captured here.
+          actorSlotId: () => this.service.getTeam(team.id).leaderSlotId,
+          promptMember: (latest: TeamAggregate) => latest.members[latest.leaderSlotId],
+        })
+      disposers.push(...installCompositionSections(
+        agentCtx,
+                {
+          service: this.service,
+          commands: this.commands,
+          rulesFor: (target: TeamMemberSlot) => this.rulesFor(target),
+          assertToolIdentity: (agent: Agent | undefined, teamId: string, convId: string, slotId: string) => {
+            this.assertToolIdentity(agent, teamId, convId, slotId)
+          },
         },
-      }))
-      disposers.push(agentCtx.systemPrompt.section({
-        name: rosterSection,
-        order: 11,
-        text: () => rosterPrompt(this.service.getTeam(team.id)),
-      }))
+                {
+          team,
+          conversationId: conversation.id,
+          slotId: member.id,
+          // The Leader slot moves when the team changes leader, so it is read
+          // when a tool is called rather than captured here.
+          actorSlotId: () => this.service.getTeam(team.id).leaderSlotId,
+          promptMember: (latest: TeamAggregate) => latest.members[latest.leaderSlotId],
+        },
+        composition.identitySection,
+        composition.rosterSection,
+      ))
       disposers.push(registerTeamTools(agentCtx, {
-        assertIdentity: caller => {
-          const current = this.service.getTeam(team.id)
-          this.assertToolIdentity(caller, team.id, conversation.id, current.leaderSlotId)
-        },
-        getTaskBoard: () => {
-          const latest = this.service.getTeam(team.id)
-          const tasks = Object.values(latest.tasks)
-            .filter(task => task.conversationId === conversation.id)
-            .map(task => JSON.parse(JSON.stringify(task)) as Record<string, string | number | string[]>)
-          return { teamId: latest.id, revision: latest.revision, tasks }
-        },
-        createTask: input => this.commands.createTask(
-          team.id,
-          conversation.id,
-          this.service.getTeam(team.id).leaderSlotId,
-          input,
-        ),
-        updateTask: input => this.commands.updateTask(
-          team.id,
-          conversation.id,
-          this.service.getTeam(team.id).leaderSlotId,
-          input,
-        ),
-        sendMessage: (recipientSlotId, content, type, taskId) => this.commands.sendMemberMessage(
-          team.id,
-          conversation.id,
-          this.service.getTeam(team.id).leaderSlotId,
-          recipientSlotId,
-          content,
-          type,
-          taskId,
-        ),
+        ...composition.tools,
         answerMember: async input => {
           const pending = this.interactions.pending(input.interactionId)
           if (pending === undefined) {

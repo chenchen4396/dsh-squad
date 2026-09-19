@@ -19,6 +19,7 @@ import type { TeamWorkspace } from '../domain/team-selectors.js'
 import type { RuleDocumentContent } from './rule-documents.js'
 import { identifyMemberAsSubagent } from './member-descriptor.js'
 import { registerScopedSkillProvider } from './scoped-skills.js'
+import { installCompositionSections, teamComposition } from './team-composition.js'
 
 /** What a member's Agent is given when it is brought online. */
 export interface MemberSetupArgs {
@@ -66,50 +67,29 @@ export function memberAgentSetup(
     identifyMemberAsSubagent(agent, member.displayName)
     await deps.ctx.agentPresets.mount(agentCtx, assistant.agentPresetId)
     installModelSelection(agentCtx, modelSelection)
-    agentCtx.systemPrompt.section({
-      name: identitySection,
-      order: 10,
-      text: () => {
-        const latest = deps.service.getTeam(team.id)
-        const latestMember = latest.members[member.id]
-        return latestMember === undefined
-          ? 'This team membership is no longer active.'
-          : memberPrompt(
-              latest,
-              latestMember,
-              deps.service.assistantForMember(latestMember).instructions,
-              deps.rulesFor(latestMember),
-            )
+    const composition = teamComposition(deps, {
+      team,
+      conversationId,
+      slotId: member.id,
+      actorSlotId: () => member.id,
+      promptMember: (latest: TeamAggregate) => latest.members[member.id],
+    })
+    // A member's own Agent is disposed whole, so the section removers are not
+    // kept: the Agent that holds them goes away with them.
+    installCompositionSections(
+      agentCtx,
+      deps,
+      {
+        team,
+        conversationId,
+        slotId: member.id,
+        actorSlotId: () => member.id,
+        promptMember: (latest: TeamAggregate) => latest.members[member.id],
       },
-    })
-    agentCtx.systemPrompt.section({
-      name: rosterSection,
-      order: 11,
-      text: () => rosterPrompt(deps.service.getTeam(team.id)),
-    })
-    registerTeamTools(agentCtx, {
-      assertIdentity: agent => { deps.assertToolIdentity(agent, team.id, conversationId, member.id) },
-      getTaskBoard: () => {
-        const latest = deps.service.getTeam(team.id)
-        const tasks = Object.values(latest.tasks)
-          .filter(task => task.conversationId === conversationId)
-          .map(task => JSON.parse(JSON.stringify(task)) as Record<string, string | number | string[]>)
-        return { teamId: latest.id, revision: latest.revision, tasks }
-      },
-      createTask: input => deps.commands.createTask(team.id, conversationId, member.id, input),
-      updateTask: input => deps.commands.updateTask(team.id, conversationId, member.id, input),
-      sendMessage: (recipientSlotId, content, type, taskId) => (
-        deps.commands.sendMemberMessage(
-          team.id,
-          conversationId,
-          member.id,
-          recipientSlotId,
-          content,
-          type,
-          taskId,
-        )
-      ),
-    })
+      composition.identitySection,
+      composition.rosterSection,
+    )
+    registerTeamTools(agentCtx, composition.tools)
     const selectedMcpServers = new Set(assistant.mcpServers)
     const mcpTools = agentCtx.tools.schemas(agent).flatMap(tool => {
       const serverName = mcpServerFromToolName(tool.name)

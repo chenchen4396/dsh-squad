@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { AgentTeamError } from '../domain/errors.js'
 
-interface TeamToolHandlers {
+export interface TeamToolHandlers {
   assertIdentity: (agent: Agent | undefined) => void
   getTaskBoard: () => {
     teamId: string
@@ -34,10 +34,6 @@ interface TeamToolHandlers {
     /** The task this message is about, when it is about one. */
     taskId?: string,
   ) => Promise<{ messageId: string; deliveryState: 'delivered' }>
-  /**
-   * Settle one member's pending question or approval. Members never talk to the
-   * reader, so the Leader answers for the team — this is that answer.
-   */
   /**
    * Settle one member's pending question or approval. Only the Leader is given
    * this: members never talk to the reader, so the Leader answers for the team.

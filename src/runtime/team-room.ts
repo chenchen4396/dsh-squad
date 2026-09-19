@@ -102,7 +102,6 @@ export async function getWorkbench(deps: RoomDeps, teamId: string, conversationI
 
 export function projectMemberConversation(
   deps: RoomDeps,
-
   team: TeamAggregate,
   member: TeamMemberSlot,
   conversation: TeamConversation,
@@ -240,7 +239,6 @@ export async function getRoom(deps: RoomDeps, teamId: string, conversationId: st
  */
 export async function getOlderMemberConversation(
   deps: RoomDeps,
-
   teamId: string,
   conversationId: string,
   slotId: string,
@@ -263,7 +261,6 @@ export async function getOlderMemberConversation(
  */
 export async function sendRoomMessage(
   deps: RoomDeps,
-
   teamId: string,
   rawContent: string,
   conversationId: string,
@@ -311,7 +308,6 @@ export async function sendRoomMessage(
 
 export async function sendUserMessage(
   deps: RoomDeps,
-
   teamId: string,
   rawContent: string,
   conversationId: string,
@@ -419,7 +415,6 @@ export function observeUserMessage(deps: RoomDeps, sessionId: string, event: Ses
  */
 export async function memberEvents(
   deps: RoomDeps,
-
   conversation: TeamConversation,
   slotId: string,
   stored?: Set<string>,
@@ -457,7 +452,6 @@ export function memberSessionId(deps: RoomDeps, conversation: TeamConversation, 
  */
 export function memberStatus(
   deps: RoomDeps,
-
   sessionId: string | undefined,
   lastRuntimeState: TeamMemberSlot['lastRuntimeState'],
 ): MemberConversationView['status'] {

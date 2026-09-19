@@ -60,7 +60,6 @@ function stubService(): AgentTeamService {
     findConversationBySession: vi.fn(() => undefined),
     sendRoomMessage: vi.fn(async () => 'room-message'),
     sendUserMessage: vi.fn(async () => 'user-message'),
-    getRoom: vi.fn(async () => 'room'),
     getWorkbench: vi.fn(async () => 'workbench'),
   } as unknown as AgentTeamService
 }

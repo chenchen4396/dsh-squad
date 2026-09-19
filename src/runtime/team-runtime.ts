@@ -14,6 +14,7 @@ import { isModelInvocable, isUserInvocable } from '@deepseek-ai/dsh-skill'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Config } from '../config.js'
 import { AgentTeamError } from '../domain/errors.js'
+import { OperationQueue } from './operation-queue.js'
 import {
   conversationWorkspace,
   mentionedSlotIds,
@@ -96,7 +97,7 @@ export class TeamRuntime {
   /** Team composition installed on a Session Agent, keyed by that session id. */
   private readonly leaders = new Map<string, LeaderAttachment>()
   private readonly activating = new Map<string, { teamId: string; conversationId: string; slotId: string }>()
-  private readonly operations = new Map<string, Promise<unknown>>()
+  private readonly operations = new OperationQueue()
   private readonly disposeStatusListener: () => void
   private readonly disposeConversationListener: () => void
   private readonly disposeStreamListener: () => void
@@ -235,7 +236,7 @@ export class TeamRuntime {
     if (offline) {
       // A Session the Harness has not materialized yet keeps the view readable
       // instead of failing the whole read.
-      await this.exclusive(teamId, () => this.ensureConversationOnline(teamId, conversation.id))
+      await this.operations.run(teamId, () => this.ensureConversationOnline(teamId, conversation.id))
         .catch(error => {
           this.ctx.logger.warn(
             `agent-team: members of conversation '${conversation.id}' are not online yet`,
@@ -387,7 +388,7 @@ export class TeamRuntime {
    * team, so a draft team becomes active here.
    */
   bindSession(sessionId: string, teamId: string): Promise<TeamConversation> {
-    return this.exclusive(teamId, async () => {
+    return this.operations.run(teamId, async () => {
       const team = this.service.getTeam(teamId)
       const existing = this.service.findConversationBySession(sessionId)
       if (existing !== undefined && existing.teamId !== teamId) {
@@ -440,7 +441,7 @@ export class TeamRuntime {
    * demand like every other one.
    */
   leaderChanged(teamId: string, nextLeaderSlotId: string): Promise<void> {
-    return this.exclusive(teamId, async () => {
+    return this.operations.run(teamId, async () => {
       for (const conversation of this.service.listConversations(teamId).items) {
         const sessionId = conversation.memberSessions[nextLeaderSlotId]
         const owned = sessionId === undefined ? undefined : this.owned.get(sessionId)
@@ -498,7 +499,7 @@ export class TeamRuntime {
       content: text,
       idempotencyKey: id,
     })
-    void this.exclusive(conversation.teamId, async () => {
+    void this.operations.run(conversation.teamId, async () => {
       await this.service.putRuntimeMessage({ ...record, deliveryState: 'delivered' })
       if (targets.length === 0) return
       await this.ensureConversationOnline(conversation.teamId, conversation.id)
@@ -519,7 +520,7 @@ export class TeamRuntime {
   unbindSession(sessionId: string): Promise<void> {
     const conversation = this.service.findConversationBySession(sessionId)
     if (conversation === undefined) return Promise.resolve()
-    return this.exclusive(conversation.teamId, async () => {
+    return this.operations.run(conversation.teamId, async () => {
       this.detachLeader(sessionId)
       await this.stopConversationMembers(conversation)
       await this.service.deleteConversationRecord(conversation.teamId, conversation.id)
@@ -537,7 +538,7 @@ export class TeamRuntime {
     if (conversation === undefined) {
       return Promise.reject(new AgentTeamError('CONVERSATION_NOT_FOUND', '该会话尚未启用团队'))
     }
-    return this.exclusive(conversation.teamId, async () => {
+    return this.operations.run(conversation.teamId, async () => {
       const updated = await this.service.updateConversationRecord(conversation.id, current => ({
         ...current,
         delegateInteractions: delegate,
@@ -593,7 +594,7 @@ export class TeamRuntime {
         throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
       }
     }
-    await this.exclusive(teamId, () => this.ensureConversationOnline(teamId, conversation.id))
+    await this.operations.run(teamId, () => this.ensureConversationOnline(teamId, conversation.id))
     const message = createUserMessage({
       content: [{ type: 'text', text: content }],
       source: { kind: 'user' },
@@ -786,7 +787,7 @@ export class TeamRuntime {
   }
 
   startTeam(teamId: string): Promise<TeamAggregate> {
-    return this.exclusive(teamId, () => this.startTeamUnlocked(teamId))
+    return this.operations.run(teamId, () => this.startTeamUnlocked(teamId))
   }
 
   /**
@@ -798,7 +799,7 @@ export class TeamRuntime {
    * Session here is simply brought online — there is nothing to forget.
    */
   freshMemberContext(teamId: string, conversationId: string, slotId: string): Promise<void> {
-    return this.exclusive(teamId, async () => {
+    return this.operations.run(teamId, async () => {
       const team = this.service.getTeam(teamId)
       const member = team.members[slotId]
       if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
@@ -821,7 +822,7 @@ export class TeamRuntime {
   }
 
   activateMember(teamId: string, slotId: string): Promise<TeamAggregate> {
-    return this.exclusive(teamId, async () => {
+    return this.operations.run(teamId, async () => {
       const team = this.service.getTeam(teamId)
       const member = team.members[slotId]
       if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
@@ -860,7 +861,7 @@ export class TeamRuntime {
   }
 
   removeMember(teamId: string, slotId: string): Promise<TeamAggregate> {
-    return this.exclusive(teamId, async () => {
+    return this.operations.run(teamId, async () => {
       const team = this.service.getTeam(teamId)
       if (team.state !== 'active' && team.state !== 'error') {
         throw new AgentTeamError('TEAM_NOT_ACTIVE', `Cannot remove a runtime member while team is '${team.state}'`)
@@ -946,7 +947,7 @@ export class TeamRuntime {
   }
 
   dissolveTeam(teamId: string): Promise<void> {
-    return this.exclusive(teamId, async () => {
+    return this.operations.run(teamId, async () => {
       let team = this.service.getTeam(teamId)
       const conversations = this.service.listConversations(teamId).items
       const sessionIds = [...new Set([
@@ -1032,7 +1033,7 @@ export class TeamRuntime {
     }
     const content = requireContent(rawContent)
     const conversation = this.requireConversation(teamId, conversationId)
-    await this.exclusive(teamId, () => this.ensureConversationOnline(teamId, conversation.id))
+    await this.operations.run(teamId, () => this.ensureConversationOnline(teamId, conversation.id))
     const agent = this.requireAgentIn(conversation, slotId)
     const message = createUserMessage({
       content: [{ type: 'text', text: content }],
@@ -1081,7 +1082,7 @@ export class TeamRuntime {
       this.service.listConversations(team.id).items.some(item => item.sessionId !== undefined))
     await mapConcurrent(bound, this.config.runtimeConcurrency, async team => {
       try {
-        await this.exclusive(team.id, async () => {
+        await this.operations.run(team.id, async () => {
           await this.messages.recover(this.service.getTeam(team.id))
           if (team.state !== 'active') {
             await this.service.updateRuntimeTeam(
@@ -1129,6 +1130,7 @@ export class TeamRuntime {
   async dispose(): Promise<void> {
     if (this.closing) return
     this.closing = true
+    this.operations.close()
     this.disposeStatusListener()
     this.disposeConversationListener()
     this.disposeStreamListener()
@@ -1139,7 +1141,7 @@ export class TeamRuntime {
     await this.interactions.dispose()
     for (const timer of this.conversationPublishes.values()) clearTimeout(timer)
     this.conversationPublishes.clear()
-    await Promise.allSettled([...this.operations.values()])
+    await this.operations.settled()
     const owned = [...this.owned.values()]
     for (const entry of owned) entry.handle.agent.cancel({ kind: 'disposed' }, { keepInbox: true })
     await Promise.allSettled(owned.map(entry => entry.handle.agent.whenIdle()))
@@ -1991,16 +1993,6 @@ export class TeamRuntime {
   }
 
 
-  private exclusive<T>(teamId: string, operation: () => Promise<T>): Promise<T> {
-    if (this.closing) return Promise.reject(new Error('dsh-squad runtime is closing'))
-    const prior = this.operations.get(teamId) ?? Promise.resolve()
-    const current = prior.catch(() => undefined).then(operation)
-    this.operations.set(teamId, current)
-    void current.finally(() => {
-      if (this.operations.get(teamId) === current) this.operations.delete(teamId)
-    }).catch(() => undefined)
-    return current
-  }
 }
 
 function mapMembers(

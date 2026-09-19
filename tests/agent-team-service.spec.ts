@@ -374,7 +374,7 @@ describe('AgentTeamService', () => {
     const runtime = new TeamRuntime(ctx, config, service)
     service.attachRuntime(runtime)
     const owned = await ownMember(service, runtime, team.id, member.id)
-    const entry = runtimeInternals(runtime).owned.get(owned.sessionId) as {
+    const entry = runtimeInternals(runtime).members.agentOf(owned.sessionId) as {
       modelSelection: { current?: { provider: string; model: string } }
     }
 
@@ -619,7 +619,7 @@ describe('AgentTeamService', () => {
 
     expect(agent.cancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: false })
     expect(agent.whenIdle).toHaveBeenCalledOnce()
-    expect(runtimeInternals(runtime).owned.size).toBe(0)
+    expect(runtimeInternals(runtime).members.memberCount()).toBe(0)
     expect(store.getTeam(draft.id)).toBeUndefined()
     expect(store.getAssistant(assistant.id)).toBeDefined()
   })
@@ -639,7 +639,7 @@ describe('AgentTeamService', () => {
     service.attachRuntime(runtime)
     const agent = fakeAgent()
     const { conversationId, sessionId } = await assignSession(service, team.id, member.id)
-    runtimeInternals(runtime).owned.set(sessionId, {
+    runtimeInternals(runtime).members.attach(sessionId, {
       teamId: team.id,
       conversationId,
       slotId: member.id,
@@ -1605,8 +1605,13 @@ interface FakeLeaderAgent {
 }
 
 interface RuntimeInternals {
-  owned: Map<string, unknown>
-  leaders: Map<string, { teamId: string; conversationId: string; slotId: string; dispose: () => void }>
+  /** The runtime's own record of which Session is which member. */
+  members: {
+    agentOf: (sessionId: string) => unknown
+    attach: (sessionId: string, entry: unknown) => void
+    memberCount: () => number
+    leaderCount: () => number
+  }
   commands: TeamCommandHandler
   messages: TeamMessageDispatcher
   assertModelAvailable: (
@@ -1886,7 +1891,7 @@ async function ownMember(
   // runtime keys ownership and its interaction scope by.
   agent.id = assigned.sessionId
   agent.session.id = assigned.sessionId
-  runtimeInternals(runtime).owned.set(assigned.sessionId, {
+  runtimeInternals(runtime).members.attach(assigned.sessionId, {
     teamId,
     conversationId: assigned.conversationId,
     slotId,
@@ -2085,7 +2090,7 @@ describe('AgentTeamService session binding', () => {
     expect(conversation.memberSessions[memberSlot.id]).toBe(creation?.sessionId)
     // The Leader owns no member Session: the Harness Session itself is it.
     expect(conversation.memberSessions[team.leaderSlotId]).toBeUndefined()
-    expect(runtimeInternals(runtime).owned.size).toBe(1)
+    expect(runtimeInternals(runtime).members.memberCount()).toBe(1)
   })
 
   it('installs the Leader composition on the Session Agent and removes it on unbind', async () => {
@@ -2117,7 +2122,7 @@ describe('AgentTeamService session binding', () => {
     await service.unbindSession('session-1')
 
     expect(service.findConversationBySession('session-1')).toBeUndefined()
-    expect(runtimeInternals(runtime).leaders.size).toBe(0)
+    expect(runtimeInternals(runtime).members.leaderCount()).toBe(0)
     for (const dispose of disposers) expect(dispose).toHaveBeenCalled()
     expect(() => service.getConversation(teamId, conversation.id)).toThrow(AgentTeamError)
   })
@@ -2364,7 +2369,7 @@ describe('AgentTeamService session binding', () => {
     })
 
     expect(service.getTeam(team.id).state).toBe('draft')
-    expect(runtimeInternals(runtime).owned.size).toBe(0)
+    expect(runtimeInternals(runtime).members.memberCount()).toBe(0)
   })
 
   it('starts a draft team without opening any Session', async () => {

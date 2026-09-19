@@ -14,6 +14,7 @@ import { isModelInvocable, isUserInvocable } from '@deepseek-ai/dsh-skill'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Config } from '../config.js'
 import { AgentTeamError } from '../domain/errors.js'
+import { MemberRegistry } from './member-registry.js'
 import { OperationQueue } from './operation-queue.js'
 import { PublishCoalescer } from './publish-coalescer.js'
 import {
@@ -94,10 +95,8 @@ interface LeaderAttachment {
 }
 
 export class TeamRuntime {
-  private readonly owned = new Map<string, OwnedAgent>()
+  private readonly members = new MemberRegistry()
   /** Team composition installed on a Session Agent, keyed by that session id. */
-  private readonly leaders = new Map<string, LeaderAttachment>()
-  private readonly activating = new Map<string, { teamId: string; conversationId: string; slotId: string }>()
   private readonly operations = new OperationQueue()
   private readonly disposeStatusListener: () => void
   private readonly disposeConversationListener: () => void
@@ -145,8 +144,8 @@ export class TeamRuntime {
       // Agent, so the reader is its counterpart and answers its questions and
       // approvals through the Harness interface — unless «替我审批» is on for
       // that binding, which leaves nobody to ask and answers them here.
-      acceptsSession: sessionId => this.owned.has(sessionId) || this.delegatesInteractions(sessionId),
-      autoAnswer: sessionId => !this.owned.has(sessionId) && this.delegatesInteractions(sessionId),
+      acceptsSession: sessionId => this.members.has(sessionId) || this.delegatesInteractions(sessionId),
+      autoAnswer: sessionId => !this.members.has(sessionId) && this.delegatesInteractions(sessionId),
       onChange: sessionId => {
         // Handing the request to the Leader is what stops a member from waiting
         // forever, so it goes first: publishing the conversation view is only
@@ -172,7 +171,7 @@ export class TeamRuntime {
       this.attachLeaderForSession(String(agent.id))
     })
     this.disposeDisposedListener = ctx.on('agent/disposed', ({ agent }) => {
-      this.leaders.delete(String(agent.id))
+      this.members.detachLeader(String(agent.id))
     })
     // Everything the user types goes through the Harness composer now, so a
     // bound Session's own user message is what the room must show — and what
@@ -182,14 +181,14 @@ export class TeamRuntime {
       this.observeUserMessage(String(session.id), event)
     })
     this.disposeStatusListener = ctx.on('agent/status', ({ agent, status }) => {
-      const owned = this.owned.get(String(agent.id))
+      const owned = this.members.agentOf(String(agent.id))
       if (owned === undefined) return
       void this.setMemberRuntimeState(owned.teamId, owned.slotId, status)
         .catch(error => this.ctx.logger.warn('agent-team: failed to persist agent status', error))
     })
     this.disposeConversationListener = ctx.on('session/event', (session) => {
       const sessionId = String(session.id)
-      if (this.owned.get(sessionId) === undefined && this.leaders.get(sessionId) === undefined) return
+      if (this.members.agentOf(sessionId) === undefined && this.members.leaderOf(sessionId) === undefined) return
       this.conversationPublishes.schedule(sessionId, () => {
         try {
           this.publishOwnedConversation(sessionId)
@@ -200,7 +199,7 @@ export class TeamRuntime {
     })
     this.disposeStreamListener = ctx.on('agent/assistant-stream', ({ agent, frame }) => {
       const sessionId = String(agent.id)
-      if (!this.owned.has(sessionId)) return
+      if (!this.members.has(sessionId)) return
       if (frame.type === 'start') {
         this.liveStreams.set(sessionId, { text: '', reasoning: '' })
       } else if (frame.type === 'chunk') {
@@ -277,7 +276,7 @@ export class TeamRuntime {
     if (leader !== undefined && String(leader.id) === sessionId) {
       return leader.session.snapshotEvents()
     }
-    const owned = this.owned.get(sessionId)
+    const owned = this.members.agentOf(sessionId)
     if (owned !== undefined) return owned.handle.agent.session.snapshotEvents()
     const materialized = stored ?? await this.storedSessionIds()
     if (!materialized.has(sessionId)) return []
@@ -313,7 +312,7 @@ export class TeamRuntime {
     lastRuntimeState: TeamMemberSlot['lastRuntimeState'],
   ): MemberConversationView['status'] {
     if (sessionId === undefined) return 'offline'
-    const owned = this.owned.get(sessionId)
+    const owned = this.members.agentOf(sessionId)
     if (owned !== undefined) return owned.handle.agent.status
     const leader = this.ctx.agents.get(SessionId(sessionId))
     if (leader !== undefined) return leader.status
@@ -442,11 +441,11 @@ export class TeamRuntime {
     return this.operations.run(teamId, async () => {
       for (const conversation of this.service.listConversations(teamId).items) {
         const sessionId = conversation.memberSessions[nextLeaderSlotId]
-        const owned = sessionId === undefined ? undefined : this.owned.get(sessionId)
+        const owned = sessionId === undefined ? undefined : this.members.agentOf(sessionId)
         if (owned !== undefined && sessionId !== undefined) {
           owned.handle.agent.cancel({ kind: 'user' }, { keepInbox: false })
           await owned.handle.agent.whenIdle()
-          this.owned.delete(sessionId)
+          this.members.detach(sessionId)
           this.interactions.forget(sessionId)
           await owned.handle.dispose()
         }
@@ -555,7 +554,7 @@ export class TeamRuntime {
   private async stopConversationMembers(conversation: TeamConversation): Promise<void> {
     const sessionIds = Object.values(conversation.memberSessions)
     const ownedEntries = sessionIds
-      .map(sessionId => [sessionId, this.owned.get(sessionId)] as const)
+      .map(sessionId => [sessionId, this.members.agentOf(sessionId)] as const)
       .filter((entry): entry is readonly [string, OwnedAgent] => entry[1] !== undefined)
     for (const [, entry] of ownedEntries) entry.handle.agent.cancel({ kind: 'user' }, { keepInbox: false })
     await Promise.all(ownedEntries.map(([, entry]) => entry.handle.agent.whenIdle()))
@@ -565,7 +564,7 @@ export class TeamRuntime {
       } catch (error) {
         this.ctx.logger.warn(`agent-team: session flush failed for ${sessionId}`, error)
       }
-      this.owned.delete(sessionId)
+      this.members.detach(sessionId)
       this.interactions.forget(sessionId)
       await entry.handle.dispose()
     }
@@ -684,7 +683,7 @@ export class TeamRuntime {
    * @returns the teams whose members actually changed.
    */
   refreshAssistantSettings(assistant: AssistantTemplate): void {
-    for (const owned of this.owned.values()) {
+    for (const owned of this.members.agents()) {
       const team = this.service.getTeam(owned.teamId)
       const member = team.members[owned.slotId]
       if (member === undefined || member.assistantId !== assistant.id) continue
@@ -809,9 +808,9 @@ export class TeamRuntime {
         conversation = await this.service.assignMemberSessions(teamId, conversationId, {
           [slotId]: `agent-team:${randomUUID()}`,
         })
-        const active = this.owned.get(previous)
+        const active = this.members.agentOf(previous)
         if (active !== undefined) {
-          this.owned.delete(previous)
+          this.members.detach(previous)
           await active.handle.dispose().catch(() => undefined)
         }
       }
@@ -885,7 +884,7 @@ export class TeamRuntime {
           .filter((value): value is string => value !== undefined),
       )]
       for (const sessionId of sessionIds) {
-        if (this.owned.get(sessionId) === undefined && this.ctx.agents.get(SessionId(sessionId)) !== undefined) {
+        if (this.members.agentOf(sessionId) === undefined && this.ctx.agents.get(SessionId(sessionId)) !== undefined) {
           throw new AgentTeamError(
             'AGENT_HANDLE_OWNERSHIP_CONFLICT',
             `Session '${sessionId}' is live without this plugin's AgentHandle`,
@@ -893,12 +892,12 @@ export class TeamRuntime {
         }
       }
       for (const sessionId of sessionIds) {
-        const owned = this.owned.get(sessionId)
+        const owned = this.members.agentOf(sessionId)
         if (owned === undefined) continue
         owned.handle.agent.cancel({ kind: 'user' }, { keepInbox: false })
         await owned.handle.agent.whenIdle()
         await this.ctx.sessions.flush(owned.handle.agent.session)
-        this.owned.delete(sessionId)
+        this.members.detach(sessionId)
         this.interactions.forget(sessionId)
         await owned.handle.dispose()
       }
@@ -956,7 +955,7 @@ export class TeamRuntime {
         if (conversation.sessionId !== undefined) this.detachLeader(conversation.sessionId)
       }
       for (const sessionId of sessionIds) {
-        if (this.owned.get(sessionId) === undefined && this.ctx.agents.get(SessionId(sessionId)) !== undefined) {
+        if (this.members.agentOf(sessionId) === undefined && this.ctx.agents.get(SessionId(sessionId)) !== undefined) {
           throw new AgentTeamError(
             'AGENT_HANDLE_OWNERSHIP_CONFLICT',
             `Session '${sessionId}' is live without this plugin's AgentHandle`,
@@ -974,7 +973,7 @@ export class TeamRuntime {
       }
 
       try {
-        const ownedEntries = [...this.owned.entries()].filter(([, entry]) => entry.teamId === teamId)
+        const ownedEntries = [...this.members.agentsWithIds()].filter(([, entry]) => entry.teamId === teamId)
         for (const [, entry] of ownedEntries) {
           entry.handle.agent.cancel({ kind: 'user' }, { keepInbox: false })
         }
@@ -987,7 +986,7 @@ export class TeamRuntime {
             this.ctx.logger.warn(`agent-team: final session flush failed during dissolution for ${sessionId}`, error)
           }
           await entry.handle.dispose()
-          this.owned.delete(sessionId)
+          this.members.detach(sessionId)
           this.interactions.forget(sessionId)
         }
 
@@ -1135,11 +1134,11 @@ export class TeamRuntime {
     this.disposeCreatedListener()
     this.disposeDisposedListener()
     this.disposeUserMessageListener()
-    for (const sessionId of [...this.leaders.keys()]) this.detachLeader(sessionId)
+    for (const sessionId of [...this.members.leaderIds()]) this.detachLeader(sessionId)
     await this.interactions.dispose()
     this.conversationPublishes.cancelAll()
     await this.operations.settled()
-    const owned = [...this.owned.values()]
+    const owned = [...this.members.agents()]
     for (const entry of owned) entry.handle.agent.cancel({ kind: 'disposed' }, { keepInbox: true })
     await Promise.allSettled(owned.map(entry => entry.handle.agent.whenIdle()))
     for (const entry of owned) {
@@ -1150,7 +1149,7 @@ export class TeamRuntime {
       }
     }
     await Promise.allSettled(owned.map(entry => entry.handle.dispose()))
-    this.owned.clear()
+    this.members.clear()
   }
 
   /**
@@ -1172,7 +1171,7 @@ export class TeamRuntime {
     for (const id of [...this.handedRequests]) {
       if (!pending.has(id)) this.handedRequests.delete(id)
     }
-    const owned = this.owned.get(sessionId)
+    const owned = this.members.agentOf(sessionId)
     if (owned === undefined) return
     const team = this.service.getTeam(owned.teamId)
     const member = team.members[owned.slotId]
@@ -1297,7 +1296,7 @@ export class TeamRuntime {
 
   private publishOwnedConversation(sessionId: string): void {
     try {
-      const owned = this.owned.get(sessionId)
+      const owned = this.members.agentOf(sessionId)
       if (owned !== undefined) {
         const team = this.service.getTeam(owned.teamId)
         const member = team.members[owned.slotId]
@@ -1316,7 +1315,7 @@ export class TeamRuntime {
       }
       // The bound Session's own Agent is the Leader, so its activity is what the
       // 团队 view shows for that member column.
-      const leader = this.leaders.get(sessionId)
+      const leader = this.members.leaderOf(sessionId)
       if (leader === undefined) return
       const team = this.service.getTeam(leader.teamId)
       const member = team.members[leader.slotId]
@@ -1380,7 +1379,7 @@ export class TeamRuntime {
       if (member.id === team.leaderSlotId) return false
       if (member.desiredState !== 'online') return false
       const sessionId = conversation.memberSessions[member.id]
-      return sessionId === undefined || !this.owned.has(sessionId)
+      return sessionId === undefined || !this.members.has(sessionId)
     })
     if (starting.length === 0) return
     // Members are subagents of the Session's own Agent, so that Agent has to be
@@ -1478,7 +1477,7 @@ export class TeamRuntime {
     workspace: TeamWorkspace,
     leader: Agent,
   ): Promise<void> {
-    const prior = this.owned.get(sessionIdValue)
+    const prior = this.members.agentOf(sessionIdValue)
     if (prior !== undefined) {
       // A member that is already live still gets the identity record: catalogs
       // read the log, and one written before this release has none.
@@ -1508,7 +1507,7 @@ export class TeamRuntime {
     await this.assertModelAvailable(member, assistant.provider, assistant.model)
 
     try {
-      this.activating.set(sessionIdValue, { teamId: team.id, conversationId, slotId: member.id })
+      this.members.beginActivation(sessionIdValue, { teamId: team.id, conversationId, slotId: member.id })
       const modelSelection: ModelSelectionRef = {
         current: {
           provider: assistant.provider,
@@ -1699,17 +1698,17 @@ export class TeamRuntime {
           agentOptions,
           setup,
         })
-      this.owned.set(sessionIdValue, {
+      this.members.attach(sessionIdValue, {
         teamId: team.id,
         conversationId,
         slotId: member.id,
         handle,
         modelSelection,
       })
-      this.activating.delete(sessionIdValue)
+      this.members.endActivation(sessionIdValue)
       await this.setMemberRuntimeState(team.id, member.id, handle.agent.status)
     } catch (error) {
-      this.activating.delete(sessionIdValue)
+      this.members.endActivation(sessionIdValue)
       const causeMessage = error instanceof Error ? error.message : String(error)
       this.ctx.logger.warn(
         `agent-team: member '${member.displayName}' activation failed: ${causeMessage}`,
@@ -1748,7 +1747,7 @@ export class TeamRuntime {
 
   /** Which team member one live Agent acts as, whether subagent or Leader. */
   private identityOf(sessionId: string): { teamId: string; conversationId: string; slotId: string } | undefined {
-    return this.owned.get(sessionId) ?? this.leaders.get(sessionId) ?? this.activating.get(sessionId)
+    return this.members.identityOf(sessionId)
   }
 
   /** Install the team composition on a bound Session's own Agent. */
@@ -1773,7 +1772,7 @@ export class TeamRuntime {
     const team = this.service.getTeam(conversation.teamId)
     const member = team.members[team.leaderSlotId]
     if (member === undefined) return
-    const existing = this.leaders.get(sessionId)
+    const existing = this.members.leaderOf(sessionId)
     if (
       existing !== undefined
       && existing.teamId === team.id
@@ -1881,7 +1880,7 @@ export class TeamRuntime {
           }
         }
       }
-      this.leaders.set(sessionId, {
+      this.members.attachLeader(sessionId, {
         teamId: team.id,
         conversationId: conversation.id,
         slotId: member.id,
@@ -1899,9 +1898,9 @@ export class TeamRuntime {
 
   /** Remove the team composition from one Session's Agent. */
   private detachLeader(sessionId: string): void {
-    const attachment = this.leaders.get(sessionId)
+    const attachment = this.members.leaderOf(sessionId)
     if (attachment === undefined) return
-    this.leaders.delete(sessionId)
+    this.members.detachLeader(sessionId)
     attachment.dispose()
   }
 
@@ -1914,7 +1913,7 @@ export class TeamRuntime {
     if (slotId === team.leaderSlotId) return this.leaderAgent(conversation)
     const sessionId = conversation.memberSessions[slotId]
     if (sessionId === undefined) return undefined
-    return this.owned.get(sessionId)?.handle.agent
+    return this.members.agentOf(sessionId)?.handle.agent
   }
 
   /** Resolve one member's Agent, failing loudly when it is not online. */
@@ -1931,7 +1930,7 @@ export class TeamRuntime {
 
   /** Every Session currently online for one member, across all conversations. */
   private ownedForSlot(teamId: string, slotId: string): OwnedAgent[] {
-    return [...this.owned.values()]
+    return [...this.members.agents()]
       .filter(owned => owned.teamId === teamId && owned.slotId === slotId)
   }
 

@@ -22,32 +22,12 @@ import { shouldSubmitComposer } from '../keyboard.js'
 import { markdownLabels } from '../native-locale.js'
 import { AnimatedModal } from '../shared.js'
 import { ConversationNodeView } from '../workbench/ConversationNodeView.js'
+import { BuilderHistory } from './BuilderHistory.js'
 import { PendingInteractionCard } from '../workbench/PendingInteractionCard.js'
 import conversationCss from '../workbench/ConversationColumn.module.css'
 import { errorText } from '../error-text.js'
 
 /** The chat that designs an assistant, and the history of past ones. */
-
-export function assistantBuilderStateLabel(state: AssistantBuilderConversationSummary['state']): string {
-  if (state === 'completed') return '已创建'
-  if (state === 'in_progress') return '配置中'
-  return '新对话'
-}
-
-
-export function formatConversationTime(value: string): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
-}
-
-/**
- * One node of the rule document tree. Folders only group — loading is chosen per
- * document, so a folder renders its children and nothing else.
- */
 
 export function AssistantBuilderConversation({ catalog }: { catalog: CatalogView | undefined }): JSX.Element {
   const [conversation, setConversation] = useState<AssistantBuilderConversationView>()
@@ -294,50 +274,20 @@ export function AssistantBuilderConversation({ catalog }: { catalog: CatalogView
   return (
     <>
       <section className={css.assistantBuilderConversation}>
-      <aside className={css.assistantBuilderHistory}>
-        <button
-          type="button"
-          className={css.assistantBuilderNewConversation}
-          disabled={loading || running || draft !== undefined}
-          onClick={() => { void createDraft() }}
-        >
-          <IconPlusOutline16 size={14} />
-          <span>新对话</span>
-        </button>
-        <div className={css.assistantBuilderHistoryList}>
-          {history.map(item => (
-            <div key={item.sessionId} className={css.assistantBuilderHistoryRow}>
-              <button
-                type="button"
-                className={`${css.assistantBuilderHistoryItem} ${item.sessionId === conversation?.sessionId ? css.assistantBuilderHistoryItemActive : ''}`}
-                disabled={loading || running || archivingSessionId !== undefined}
-                onClick={() => { void selectConversation(item.sessionId) }}
-              >
-                <strong>{item.title}</strong>
-                <span>
-                  <time dateTime={item.updatedAt}>{formatConversationTime(item.updatedAt)}</time>
-                  <em>{assistantBuilderStateLabel(item.state)}</em>
-                </span>
-              </button>
-              <Tooltip label="归档会话" side="right" delayMs={400}>
-                <button
-                  type="button"
-                  className={css.assistantBuilderHistoryArchive}
-                  aria-label={`归档会话 ${item.title}`}
-                  disabled={loading || archivingSessionId !== undefined || (running && item.sessionId === conversation?.sessionId)}
-                  onClick={() => {
-                    setArchiveError(undefined)
-                    setArchiveCandidate(item)
-                  }}
-                >
-                  <IconArchiveOutline20 size={14} />
-                </button>
-              </Tooltip>
-            </div>
-          ))}
-          {!loading && history.length === 0 && <span className={css.assistantBuilderHistoryEmpty}>暂无历史对话</span>}
-        </div>
-      </aside>
+      <BuilderHistory
+        history={history}
+        activeSessionId={conversation?.sessionId}
+        loading={loading}
+        running={running}
+        drafting={draft !== undefined}
+        archivingSessionId={archivingSessionId}
+        onNew={() => { void createDraft() }}
+        onSelect={sessionId => { void selectConversation(sessionId) }}
+        onArchive={item => {
+          setArchiveError(undefined)
+          setArchiveCandidate(item)
+        }}
+      />
       <div className={css.assistantBuilderMain}>
         <div className={css.assistantBuilderRuntime}>
         <span className={css.assistantBuilderRuntimeState}>

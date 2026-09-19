@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { AssistantView, CatalogView } from '../src/transport/contracts.js'
 import { AssistantBuilderConversation } from '../src/client/assistants/AssistantBuilder.js'
+import { BuilderHistory } from '../src/client/assistants/BuilderHistory.js'
 import { AssistantCard } from '../src/client/assistants/AssistantCard.js'
 import { AssistantForm } from '../src/client/assistants/AssistantForm.js'
 import { AssistantPanel } from '../src/client/assistants/AssistantPanel.js'
@@ -178,5 +179,50 @@ describe('assistant panels render', () => {
     }))
     expect(text(html)).toContain('团队规范')
     expect(html).toContain('type="checkbox"')
+  })
+})
+
+describe('the designer conversation history', () => {
+  const conversations = [
+    { sessionId: 's1', title: 'SE 实现者', state: 'completed', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T03:04:00.000Z' },
+    { sessionId: 's2', title: '新的助手', state: 'in_progress', createdAt: '2026-01-03T00:00:00.000Z', updatedAt: '2026-01-03T05:06:00.000Z' },
+  ] as never
+
+  const render = (props: Record<string, unknown>): string =>
+    renderToStaticMarkup(createElement(BuilderHistory, {
+      history: [], activeSessionId: undefined, loading: false, running: false,
+      drafting: false, archivingSessionId: undefined,
+      onNew: () => {}, onSelect: () => {}, onArchive: () => {},
+      ...props,
+    } as never))
+
+  it('lists each past conversation with its state', () => {
+    const shown = text(render({ history: conversations }))
+    expect(shown).toContain('SE 实现者')
+    expect(shown).toContain('已创建')
+    expect(shown).toContain('配置中')
+  })
+
+  it('says so when there is no history, and stays quiet while loading', () => {
+    expect(text(render({ history: [] }))).toContain('暂无历史对话')
+    // While the list is still being read, "no history" would be a lie.
+    expect(text(render({ history: [], loading: true }))).not.toContain('暂无历史对话')
+  })
+
+  it('refuses a new conversation while one is being designed', () => {
+    // A second new conversation would abandon the draft being written.
+    expect(render({ drafting: true })).toMatch(/disabled/)
+  })
+
+  it('refuses to archive while the designer is working', () => {
+    const html = render({ history: conversations, running: true, activeSessionId: 's2' })
+    // The running conversation is the one whose archive must not be offered.
+    expect(html).toMatch(/disabled[^>]*aria-label="归档会话 新的助手"|aria-label="归档会话 新的助手"[^>]*disabled/)
+  })
+
+  it('marks the conversation on screen', () => {
+    const html = render({ history: conversations, activeSessionId: 's2' })
+    // The active row carries the active class; the other does not.
+    expect([...html.matchAll(/assistantBuilderHistoryItemActive/g)]).toHaveLength(1)
   })
 })

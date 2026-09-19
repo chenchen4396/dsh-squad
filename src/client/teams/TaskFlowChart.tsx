@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { TeamTask } from '../../domain/types.js'
 import { buildTaskGraph, type TaskGraphNode } from '../task-graph.js'
@@ -294,13 +294,42 @@ function TaskDetail({
   onPick: (id: string) => void
   onClose: () => void
 }): JSX.Element | null {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const restoreRef = useRef<Element | null>(null)
+
   useEffect(() => {
     if (node === undefined) return
+    // A dialog takes the keyboard with it: focus moves in, Tab stays inside so
+    // the page behind cannot be reached, and closing hands focus back to
+    // whatever opened it. Otherwise a keyboard reader is left at the top.
+    restoreRef.current = document.activeElement
+    const dialog = dialogRef.current
+    dialog?.querySelector<HTMLElement>('button')?.focus()
+
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') { onClose(); return }
+      if (event.key !== 'Tab' || dialog === null) return
+      const focusable = [...dialog.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+        .filter(element => !element.hasAttribute('disabled'))
+      if (focusable.length === 0) return
+      const first = focusable[0]!
+      const last = focusable[focusable.length - 1]!
+      const active = document.activeElement
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
+
     window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('keydown', onKey) }
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      const previous = restoreRef.current
+      if (previous instanceof HTMLElement) previous.focus()
+    }
   }, [node, onClose])
 
   if (node === undefined || typeof document === 'undefined') return null
@@ -308,6 +337,7 @@ function TaskDetail({
   return createPortal(
     <div className={css.taskDetailBackdrop} onClick={onClose} role="presentation">
       <div
+        ref={dialogRef}
         className={css.taskDetailDialog}
         role="dialog"
         aria-modal="true"

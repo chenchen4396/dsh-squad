@@ -28,6 +28,13 @@
   --squad-radius-xl: 16px;
   --squad-radius-pill: 999px;
 
+  /*
+   * The keyboard focus ring. One definition, so every clickable thing shows
+   * the same mark: a control that cannot be seen while focused is a control
+   * only a mouse can use.
+   */
+  --squad-focus-ring: 2px solid var(--dsw-alias-brand-primary);
+
   /* Type: metadata, labels, body, headings. */
   --squad-text-micro: 10px;
   --squad-text-xs: 11px;
@@ -39,8 +46,27 @@
 
 .floatingTeamLauncher:focus-visible,
 .linkDanger:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: var(--squad-focus-ring);
   outline-offset: 2px;
+}
+
+/*
+ * Clickable elements that are not <button>, so no user agent draws a focus ring
+ * for them. Native buttons are left alone: the application already styles them,
+ * and a second ring would read as a defect.
+ */
+.teamListRow:focus-visible,
+.assistantCardContent:focus-visible,
+.assistantBuilderHistoryItem:focus-visible,
+.addMemberOption:focus-visible,
+.skillOption:focus-visible,
+.ruleDocumentMain:focus-visible,
+.taskFlowSectionHead:focus-visible,
+.taskDetailClose:focus-visible,
+.bundleModeOption:focus-visible {
+  outline: var(--squad-focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--squad-radius-md);
 }
 
 .floatingTeamLauncher {
@@ -2879,7 +2905,7 @@ textarea.input {
   height: 15px;
   border-radius: var(--squad-radius-pill);
   background: var(--dsw-alias-button-info-fill);
-  color: #fff;
+  color: var(--dsw-alias-label-primary-inverted);
   font-size: var(--squad-text-micro);
   font-weight: 700;
 }
@@ -3435,7 +3461,7 @@ textarea.input {
   border: none;
   border-radius: var(--squad-radius-pill);
   background: var(--dsw-alias-button-info-fill);
-  color: #fff;
+  color: var(--dsw-alias-label-primary-inverted);
   cursor: pointer;
 }
 
@@ -4041,8 +4067,16 @@ textarea.input {
 @media (prefers-reduced-motion: reduce) {
   .taskFlowHalo,
   .taskFlowAccent,
-  .taskFlowProgressFill {
+  .taskFlowProgressFill,
+  .taskFlowNode {
     animation: none;
+  }
+
+  .taskFlowCard,
+  .taskFlowNode,
+  .memberTabActions,
+  .memberTabWithActions {
+    transition: none;
   }
 }
 
@@ -4055,7 +4089,9 @@ textarea.input {
   align-items: center;
   justify-content: center;
   padding: var(--squad-space-3xl);
-  background: rgb(0 0 0 / 32%);
+  /* The application's own scrim, with a readable fallback for a theme that
+     does not define it. */
+  background: var(--dsw-alias-bg-mask-1, rgb(0 0 0 / 32%));
 }
 
 .taskDetailDialog {

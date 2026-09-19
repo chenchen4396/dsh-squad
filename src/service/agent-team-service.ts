@@ -14,7 +14,12 @@ import {
   createMemberSlot,
   requireAssistant,
   requireTeam,
+  type MutationOptions,
 } from './store-guards.js'
+
+// The service's public surface still names it here.
+export type { MutationOptions } from './store-guards.js'
+import * as teams from './teams-service.js'
 import {
   deleteRuleDocument,
   getRuleDocument,
@@ -72,10 +77,6 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     agentTeam: AgentTeamService
   }
-}
-
-export interface MutationOptions {
-  expectedRevision?: number
 }
 
 /**
@@ -630,101 +631,23 @@ export class AgentTeamService extends Service {
   }
 
   // ── Teams and their membership ──────────────────────────────────────────
+  // Each of these is `teams-service`'s; the service is the one place callers
+  // reach, so it hands them on rather than making everybody import the module.
+
   getTeam(id: string): TeamAggregate {
-    return requireTeam(this.store, id)
+    return teams.getTeam(this.teamDeps(), id)
   }
 
   listTeams(): Page<TeamAggregate> {
-    const items = this.store.listTeams()
-    return { items, total: items.length }
+    return teams.listTeams(this.teamDeps())
   }
 
   async createTeamDraft(raw: CreateTeamDraftInput): Promise<TeamAggregate> {
-    const input = createTeamDraftInputSchema.parse(raw)
-    const leaders = input.members.filter(member => member.role === 'leader')
-    if (leaders.length !== 1) {
-      throw new AgentTeamError('TEAM_INVALID_LEADER', 'A team must contain exactly one leader')
-    }
-
-    const now = new Date().toISOString()
-    const members: Record<string, TeamMemberSlot> = {}
-    let leaderSlotId = ''
-    for (const item of input.members) {
-      const assistant = requireAssistant(this.store, item.assistantId)
-      const slotId = randomUUID()
-      members[slotId] = {
-        id: slotId,
-        assistantId: assistant.id,
-        displayName: assistant.name,
-        role: item.role,
-        permissionPresetId: assistant.permissionPresetId,
-        ...(assistant.reasoningEffort === undefined ? {} : { reasoningEffort: assistant.reasoningEffort }),
-        ruleAllowlist: [],
-        desiredState: 'offline',
-        lastRuntimeState: 'offline',
-        joinedAt: now,
-      }
-      if (item.role === 'leader') leaderSlotId = slotId
-    }
-
-    const team: TeamAggregate = {
-      schemaVersion: 1,
-      id: randomUUID(),
-      name: input.name.trim(),
-      leaderSlotId,
-      state: 'draft',
-      directMemberChat: input.directMemberChat ?? this.config.directMemberChatDefault,
-      members,
-      retiredSessions: {},
-      tasks: {},
-      leases: {},
-      outbox: {},
-      revision: 1,
-      createdAt: now,
-      updatedAt: now,
-    }
-    await this.store.putTeam(team)
-    await this.activity('team.created', team.id, team.revision, `Team ${team.name} draft created`)
-    this.publish('team', team.id, team.revision, 'team.created')
-    return team
+    return await teams.createTeamDraft(this.teamDeps(), raw)
   }
 
   async cloneTeam(sourceTeamId: string, raw: CloneTeamInput): Promise<TeamAggregate> {
-    const input = cloneTeamInputSchema.parse(raw)
-    const source = requireTeam(this.store, sourceTeamId)
-
-    const now = new Date().toISOString()
-    const members: Record<string, TeamMemberSlot> = {}
-    let leaderSlotId = ''
-    for (const sourceMember of Object.values(source.members)) {
-      const member = cloneMemberSlot(sourceMember, now)
-      members[member.id] = member
-      if (sourceMember.id === source.leaderSlotId) leaderSlotId = member.id
-    }
-    if (leaderSlotId === '') {
-      throw new AgentTeamError('TEAM_INVALID_LEADER', 'Source team has no valid leader')
-    }
-
-    const team: TeamAggregate = {
-      schemaVersion: 1,
-      id: randomUUID(),
-      name: input.name.trim(),
-      leaderSlotId,
-      state: 'draft',
-      directMemberChat: source.directMemberChat,
-      members,
-      retiredSessions: {},
-      tasks: {},
-      leases: {},
-      outbox: {},
-      revision: 1,
-      createdAt: now,
-      updatedAt: now,
-    }
-    await this.store.putTeam(team)
-    await this.activity('team.cloned', team.id, team.revision, `Team ${team.name} cloned from ${source.name}`)
-    this.publish('team', team.id, team.revision, 'team.cloned')
-    return team
+    return await teams.cloneTeam(this.teamDeps(), sourceTeamId, raw)
   }
 
   async changeLeader(
@@ -732,31 +655,7 @@ export class AgentTeamService extends Service {
     successorSlotId: string,
     options: MutationOptions = {},
   ): Promise<TeamAggregate> {
-    const current = requireTeam(this.store, teamId)
-    assertTeamMutable(current)
-    assertRevision('team', current.revision, options.expectedRevision)
-    if (current.members[successorSlotId] === undefined) {
-      throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${successorSlotId}'`)
-    }
-    if (current.leaderSlotId === successorSlotId) {
-      throw new AgentTeamError('INVALID_REQUEST', 'The selected member is already the team leader')
-    }
-    const next = await this.store.updateTeam(teamId, team => ({
-      ...team,
-      members: Object.fromEntries(Object.entries(team.members).map(([slotId, member]) => [
-        slotId,
-        { ...member, role: slotId === successorSlotId ? 'leader' : 'member' },
-      ])),
-      leaderSlotId: successorSlotId,
-      revision: team.revision + 1,
-      updatedAt: new Date().toISOString(),
-    }))
-    await this.activity('team.leader_changed', teamId, next.revision, 'Team leader changed')
-    this.publish('team', teamId, next.revision, 'team.leader_changed')
-    if (this.runtime !== undefined && next.state !== 'draft') {
-      await this.runtime.leaderChanged(teamId, successorSlotId)
-    }
-    return next
+    return await teams.changeLeader(this.teamDeps(), teamId, successorSlotId, options)
   }
 
   async addMember(
@@ -764,27 +663,7 @@ export class AgentTeamService extends Service {
     raw: AddTeamMemberInput,
     options: MutationOptions = {},
   ): Promise<TeamAggregate> {
-    const input = addTeamMemberInputSchema.parse(raw)
-    const team = requireTeam(this.store, teamId)
-    assertTeamMutable(team)
-    assertRevision('team', team.revision, options.expectedRevision)
-    if (team.state !== 'draft' && team.state !== 'active') {
-      throw new AgentTeamError('TEAM_NOT_ACTIVE', `Cannot add a member while team is '${team.state}'`)
-    }
-    const assistant = requireAssistant(this.store, input.assistantId)
-    const displayName = assistant.name
-    const now = new Date().toISOString()
-    const member = createMemberSlot(assistant, displayName, 'member', now, team.state === 'draft' ? 'offline' : 'online')
-    const next = await this.store.updateTeam(teamId, current => ({
-      ...current,
-      members: { ...current.members, [member.id]: member },
-      revision: current.revision + 1,
-      updatedAt: now,
-    }))
-    await this.activity('team.member_added', teamId, next.revision, `Member ${displayName} added`)
-    this.publish('team', teamId, next.revision, 'team.member_added')
-    if (next.state !== 'draft') return this.requireRuntime().activateMember(teamId, member.id)
-    return next
+    return await teams.addMember(this.teamDeps(), teamId, raw, options)
   }
 
   async removeMember(
@@ -792,32 +671,42 @@ export class AgentTeamService extends Service {
     slotId: string,
     options: MutationOptions = {},
   ): Promise<TeamAggregate> {
-    const team = requireTeam(this.store, teamId)
-    assertTeamMutable(team)
-    assertRevision('team', team.revision, options.expectedRevision)
-    const member = team.members[slotId]
-    if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-    if (slotId === team.leaderSlotId) {
-      throw new AgentTeamError('MEMBER_IS_LEADER', 'Choose a successor before removing the current leader')
-    }
-    assertMemberHasNoOpenTasks(team, slotId)
-    if (team.state === 'draft') {
-      const next = await this.store.updateTeam(teamId, current => {
-        const members = { ...current.members }
-        delete members[slotId]
-        return { ...current, members, revision: current.revision + 1, updatedAt: new Date().toISOString() }
-      })
-      await this.activity('team.member_removed', teamId, next.revision, `Member ${member.displayName} removed`)
-      this.publish('team', teamId, next.revision, 'team.member_removed')
-      return next
-    }
-    return this.requireRuntime().removeMember(teamId, slotId)
+    return await teams.removeMember(this.teamDeps(), teamId, slotId, options)
   }
 
   async startTeam(teamId: string, options: MutationOptions = {}): Promise<TeamAggregate> {
-    const team = requireTeam(this.store, teamId)
-    assertRevision('team', team.revision, options.expectedRevision)
-    return this.requireRuntime().startTeam(teamId)
+    return await teams.startTeam(this.teamDeps(), teamId, options)
+  }
+
+  async dissolveTeam(
+    teamId: string,
+    confirmation: string,
+    options: MutationOptions = {},
+  ): Promise<void> {
+    await teams.dissolveTeam(this.teamDeps(), teamId, confirmation, options)
+  }
+
+  async deleteTeamRecords(teamId: string): Promise<void> {
+    await teams.deleteTeamRecords(this.teamDeps(), teamId)
+  }
+
+  async purgeTeamRecords(teamId: string): Promise<void> {
+    await teams.purgeTeamRecords(this.teamDeps(), teamId)
+  }
+
+  /** What `teams-service` needs from this service, gathered in one place. */
+  private teamDeps(): teams.TeamDeps {
+    return {
+      store: this.store,
+      config: this.config,
+      runtime: this.runtime,
+      requireRuntime: () => this.requireRuntime(),
+      workspace: this.workspace,
+      activity: (kind, entityId, revision, summary) => this.activity(kind, entityId, revision, summary),
+      publish: (entityType, entityId, revision, kind, conversation) => {
+        this.publish(entityType, entityId, revision, kind, conversation)
+      },
+    }
   }
 
   async sendUserMessage(
@@ -1073,7 +962,6 @@ export class AgentTeamService extends Service {
       .respondToInteraction(teamId, slotId, interactionId, response, conversationId)
   }
 
-
   publishConversation(teamId: string, revision: number, conversation?: MemberConversationView): void {
     this.publish('conversation', teamId, revision, 'member.conversation', conversation)
   }
@@ -1179,45 +1067,10 @@ export class AgentTeamService extends Service {
     return echoes.length
   }
 
-  async dissolveTeam(
-    teamId: string,
-    confirmation: string,
-    options: MutationOptions = {},
-  ): Promise<void> {
-    const team = requireTeam(this.store, teamId)
-    assertRevision('team', team.revision, options.expectedRevision)
-    if (confirmation !== team.name) {
-      throw new AgentTeamError('INVALID_REQUEST', 'Team name confirmation does not match')
-    }
-    if (team.state !== 'draft') return this.requireRuntime().dissolveTeam(teamId)
-    await this.deleteTeamRecords(teamId)
-  }
-
-  async deleteTeamRecords(teamId: string): Promise<void> {
-    const team = requireTeam(this.store, teamId)
-    await Promise.all(this.store.listMessages(teamId).map(message => this.store.deleteMessage(message.id)))
-    await Promise.all(this.store.listConversations(teamId).map(conversation => this.store.deleteConversation(conversation.id)))
-    await Promise.all(this.store.listActivities(teamId).map(activity => this.store.deleteActivity(activity.id)))
-    await this.store.deleteTeam(teamId)
-    await this.workspace.unwatch(teamId)
-    this.publish('team', teamId, team.revision + 1, 'team.deleted')
-  }
-
   /**
    * Drop every stored record of a team without touching its Workspace. Used to
    * discard teams that predate conversation-scoped member Sessions.
    */
-  async purgeTeamRecords(teamId: string): Promise<void> {
-    const team = this.store.getTeam(teamId)
-    if (team === undefined) return
-    await Promise.all(this.store.listMessages(teamId).map(message => this.store.deleteMessage(message.id)))
-    await Promise.all(this.store.listConversations(teamId).map(conversation => this.store.deleteConversation(conversation.id)))
-    await Promise.all(this.store.listActivities(teamId).map(activity => this.store.deleteActivity(activity.id)))
-    await Promise.all(this.store.listOperations().filter(operation => operation.teamId === teamId).map(operation => this.store.deleteOperation(operation.id)))
-    await this.store.deleteTeam(teamId)
-    await this.workspace.unwatch(teamId)
-    this.publish('team', teamId, team.revision + 1, 'team.deleted')
-  }
 
   getOperation(id: string): Operation {
     const operation = this.store.getOperation(id)
@@ -1328,7 +1181,6 @@ export class AgentTeamService extends Service {
     return this.runtime
   }
 
-
   private requireAssistantBuilderRuntime(): AssistantBuilderRuntime {
     if (this.assistantBuilderRuntime === undefined) throw new Error('Assistant Builder runtime is not attached')
     return this.assistantBuilderRuntime
@@ -1393,27 +1245,6 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
-/**
- * Clone a member onto a new slot. The clone points at the same assistant, so it
- * inherits that assistant's *current* configuration; copying a frozen snapshot
- * here would carry a stale model into the new team.
- */
-function cloneMemberSlot(source: TeamMemberSlot, now: string): TeamMemberSlot {
-  const slotId = randomUUID()
-  return {
-    id: slotId,
-    assistantId: source.assistantId,
-    displayName: source.displayName,
-    role: source.role,
-    permissionPresetId: source.permissionPresetId,
-    ...(source.reasoningEffort === undefined ? {} : { reasoningEffort: source.reasoningEffort }),
-    ruleAllowlist: [...source.ruleAllowlist],
-    desiredState: 'offline',
-    lastRuntimeState: 'offline',
-    joinedAt: now,
-  }
-}
-
 function withReasoningEffort(
   member: TeamMemberSlot,
   reasoningEffort: string | undefined,
@@ -1422,14 +1253,3 @@ function withReasoningEffort(
   return reasoningEffort === undefined ? rest : { ...rest, reasoningEffort }
 }
 
-function assertMemberHasNoOpenTasks(team: TeamAggregate, slotId: string): void {
-  const open = Object.values(team.tasks).filter(task =>
-    taskAssigneeIds(task).includes(slotId) && !['completed', 'failed', 'cancelled'].includes(task.status))
-  if (open.length > 0) {
-    throw new AgentTeamError(
-      'MEMBER_BUSY',
-      'Reassign, complete, fail, or cancel this member’s open tasks before removal',
-      { taskIds: open.map(task => task.id) },
-    )
-  }
-}

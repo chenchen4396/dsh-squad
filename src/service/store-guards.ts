@@ -3,6 +3,11 @@ import { AgentTeamError } from '../domain/errors.js'
 import type { AssistantTemplate, TeamAggregate, TeamMemberSlot } from '../domain/types.js'
 import type { AgentTeamStore } from '../storage/store.js'
 
+/** What a change may ask for: the revision it was looking at. */
+export interface MutationOptions {
+  expectedRevision?: number
+}
+
 /**
  * Reading the store, and refusing to proceed when it will not do.
  *

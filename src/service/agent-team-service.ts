@@ -19,6 +19,7 @@ import {
 
 // The service's public surface still names it here.
 export type { MutationOptions } from './store-guards.js'
+import * as assistants from './assistants-service.js'
 import * as teams from './teams-service.js'
 import {
   deleteRuleDocument,
@@ -362,10 +363,6 @@ export class AgentTeamService extends Service {
     }
   }
 
-  getAssistant(id: string): AssistantTemplate {
-    return requireAssistant(this.store, id)
-  }
-
   /**
    * The assistant a member runs as, resolved live.
    *
@@ -375,22 +372,80 @@ export class AgentTeamService extends Service {
    * a stored team.
    */
   // ── Assistant templates ─────────────────────────────────────────────────
+  // These belong to `assistants-service`; the service is where callers reach
+  // them, so it hands each one on.
+
+  getAssistant(id: string): AssistantTemplate {
+    return assistants.getAssistant(this.assistantDeps(), id)
+  }
+
   assistantForMember(member: TeamMemberSlot): AssistantTemplate {
-    const assistant = this.store.getAssistant(member.assistantId)
-    if (assistant === undefined) {
-      throw new AgentTeamError(
-        'ASSISTANT_NOT_FOUND',
-        `成员「${member.displayName}」引用的助手已不存在，请替换该成员或重建团队`,
-        { memberId: member.id, assistantId: member.assistantId },
-      )
-    }
-    return assistant
+    return assistants.assistantForMember(this.assistantDeps(), member)
   }
 
   listAssistants(): Page<AssistantTemplate> {
-    const items = this.store.listAssistants()
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
-    return { items, total: items.length }
+    return assistants.listAssistants(this.assistantDeps())
+  }
+
+  async createAssistant(raw: CreateAssistantInput): Promise<AssistantTemplate> {
+    return await assistants.createAssistant(this.assistantDeps(), raw)
+  }
+
+  async validateAssistantDraft(
+    raw: CreateAssistantInput,
+  ): Promise<CreateAssistantInput & { ruleDocumentAllowlist: string[] }> {
+    return await assistants.validateAssistantDraft(this.assistantDeps(), raw)
+  }
+
+  async updateAssistant(
+    id: string,
+    raw: UpdateAssistantInput,
+    options: MutationOptions = {},
+  ): Promise<AssistantTemplate> {
+    return await assistants.updateAssistant(this.assistantDeps(), id, raw, options)
+  }
+
+  assistantSettingsFor(member: TeamMemberSlot): {
+    permissionPresetId: string
+    reasoningEffort?: string
+  } | undefined {
+    return assistants.assistantSettingsFor(this.assistantDeps(), member)
+  }
+
+  async followAssistants(): Promise<void> {
+    await assistants.followAssistants(this.assistantDeps())
+  }
+
+  async cloneAssistant(id: string, name?: string): Promise<AssistantTemplate> {
+    return await assistants.cloneAssistant(this.assistantDeps(), id, name)
+  }
+
+  async deleteAssistant(id: string): Promise<void> {
+    await assistants.deleteAssistant(this.assistantDeps(), id)
+  }
+
+  async updateRuntimeTeam(
+    teamId: string,
+    update: (team: TeamAggregate) => TeamAggregate,
+    kind: string,
+    summary: string,
+  ): Promise<TeamAggregate> {
+    return await assistants.updateRuntimeTeam(this.assistantDeps(), teamId, update, kind, summary)
+  }
+
+  /** What `assistants-service` needs from this service, gathered in one place. */
+  private assistantDeps(): assistants.AssistantDeps {
+    return {
+      store: this.store,
+      ctx: this.ctx,
+      runtime: this.runtime,
+      activity: (kind, entityId, revision, summary) => this.activity(kind, entityId, revision, summary),
+      publish: (entityType, entityId, revision, kind) => {
+        this.publish(entityType, entityId, revision, kind)
+      },
+      modelCapabilities: (provider, model) => this.modelCapabilities(provider, model),
+      mcpCatalog: agentPresetId => this.mcpCatalog(agentPresetId),
+    }
   }
 
   /**
@@ -407,60 +462,6 @@ export class AgentTeamService extends Service {
     return importInto(this.store, raw)
   }
 
-  async createAssistant(raw: CreateAssistantInput): Promise<AssistantTemplate> {
-    const input = await this.validateAssistantDraft(raw)
-    const now = new Date().toISOString()
-    const assistant: AssistantTemplate = {
-      schemaVersion: 1,
-      id: randomUUID(),
-      ...input,
-      revision: 1,
-      createdAt: now,
-      updatedAt: now,
-    }
-    await this.store.putAssistant(assistant)
-    await this.activity('assistant.created', assistant.id, assistant.revision, `Assistant ${assistant.name} created`)
-    this.publish('assistant', assistant.id, assistant.revision, 'assistant.created')
-    return assistant
-  }
-
-  async validateAssistantDraft(
-    raw: CreateAssistantInput,
-  ): Promise<CreateAssistantInput & { ruleDocumentAllowlist: string[] }> {
-    const input = normalizeAssistantInput(createAssistantInputSchema.parse(raw))
-    await this.validateAssistantReferences(input)
-    return input
-  }
-
-  async updateAssistant(
-    id: string,
-    raw: UpdateAssistantInput,
-    options: MutationOptions = {},
-  ): Promise<AssistantTemplate> {
-    const patch = updateAssistantInputSchema.parse(raw)
-    const current = requireAssistant(this.store, id)
-    assertRevision('assistant', current.revision, options.expectedRevision)
-    const candidate = normalizeAssistantInput(createAssistantInputSchema.parse({
-      ...assistantInputOf(current),
-      ...patch,
-    }))
-    await this.validateAssistantReferences(candidate)
-    const next = await this.store.updateAssistant(id, value => ({
-      ...value,
-      ...candidate,
-      revision: value.revision + 1,
-      updatedAt: new Date().toISOString(),
-    }))
-    await this.activity('assistant.updated', next.id, next.revision, `Assistant ${next.name} updated`)
-    // Members inherit the template live, but one that is already running holds
-    // the selection and sandbox it was created with, so the edit is pushed onto
-    // the members that still follow this assistant. Without this the teams drift
-    // from their assistant and nothing on screen says so.
-    await this.followAssistant(next)
-    this.publish('assistant', next.id, next.revision, 'assistant.updated')
-    return next
-  }
-
   /**
    * The permission and reasoning a member runs with.
    *
@@ -469,34 +470,6 @@ export class AgentTeamService extends Service {
    * activation, the running Agent, the stored record — reads it from here, so
    * the team can never drift from the assistant that describes it.
    */
-  assistantSettingsFor(member: TeamMemberSlot): {
-    permissionPresetId: string
-    reasoningEffort?: string
-  } | undefined {
-    const assistant = this.store.getAssistant(member.assistantId)
-    if (assistant === undefined) return undefined
-    return {
-      permissionPresetId: assistant.permissionPresetId,
-      ...(assistant.reasoningEffort === undefined ? {} : { reasoningEffort: assistant.reasoningEffort }),
-    }
-  }
-
-  /** Rewrite every member of one team onto its assistant's current settings. */
-  private membersOntoAssistants(team: TeamAggregate): TeamAggregate {
-    return {
-      ...team,
-      members: mapTeamMembers(team, member => {
-        const settings = this.assistantSettingsFor(member)
-        if (settings === undefined) return member
-        if (!this.ctx.permissionPresets.names.includes(settings.permissionPresetId)) return member
-        return {
-          ...member,
-          permissionPresetId: settings.permissionPresetId,
-          reasoningEffort: settings.reasoningEffort,
-        }
-      }),
-    }
-  }
 
   /**
    * Bring the members of every team back in line with an edited assistant.
@@ -505,28 +478,6 @@ export class AgentTeamService extends Service {
    * records the next activation reads *and* the Agents already running. Draft
    * and archived teams have no runtime, so their records are all that changes.
    */
-  private async followAssistant(assistant: AssistantTemplate): Promise<void> {
-    // A template may name a preset this deployment does not offer (an assistant
-    // imported from elsewhere). Writing it would make every member unstartable,
-    // so such a template is left alone rather than followed into a dead end.
-    if (!this.ctx.permissionPresets.names.includes(assistant.permissionPresetId)) return
-    const teams = this.store.listTeams()
-      .filter(team => Object.values(team.members).some(member => member.assistantId === assistant.id))
-    if (teams.length === 0) return
-    // Members that are already running hold the sandbox they were created with,
-    // so the runtime re-sandboxes the ones this assistant owns. A team with no
-    // running member still needs its record updated — that record is what the
-    // next activation reads.
-    this.runtime?.refreshAssistantSettings(assistant)
-    for (const team of teams) {
-      await this.updateRuntimeTeam(
-        team.id,
-        current => this.membersOntoAssistants(current),
-        'team.members_followed_assistant',
-        `Members of ${team.name} follow assistant ${assistant.name}`,
-      )
-    }
-  }
 
   /**
    * Bring every member of every team onto its assistant once, at startup.
@@ -536,47 +487,6 @@ export class AgentTeamService extends Service {
    * sandbox the member actually ran with. The composition is authoritative now,
    * and this closes the gap for teams bound before that.
    */
-  async followAssistants(): Promise<void> {
-    const teams = this.store.listTeams()
-      .filter(team => Object.values(team.members).some(member => (
-        this.assistantSettingsFor(member) !== undefined
-      )))
-    for (const team of teams) {
-      const next = this.membersOntoAssistants(team)
-      if (JSON.stringify(next.members) === JSON.stringify(team.members)) continue
-      await this.updateRuntimeTeam(
-        team.id,
-        current => this.membersOntoAssistants(current),
-        'team.members_followed_assistant',
-        `Members of ${team.name} followed their assistants on startup`,
-      )
-    }
-  }
-
-  async cloneAssistant(id: string, name?: string): Promise<AssistantTemplate> {
-    const source = requireAssistant(this.store, id)
-    return this.createAssistant({
-      ...assistantInputOf(source),
-      name: name?.trim() || `${source.name} Copy`,
-    })
-  }
-
-  async deleteAssistant(id: string): Promise<void> {
-    const assistant = requireAssistant(this.store, id)
-    const references = this.store.listTeams()
-      .filter(team => Object.values(team.members).some(member => member.assistantId === id))
-      .map(team => ({ id: team.id, name: team.name }))
-    if (references.length > 0) {
-      throw new AgentTeamError(
-        'ASSISTANT_IN_USE',
-        `Assistant '${assistant.name}' is used by active team members`,
-        { teams: references },
-      )
-    }
-    await this.store.deleteAssistant(id)
-    await this.activity('assistant.deleted', id, assistant.revision + 1, `Assistant ${assistant.name} deleted`)
-    this.publish('assistant', id, assistant.revision + 1, 'assistant.deleted')
-  }
 
   listAssistantBuilderConversations(): Promise<AssistantBuilderConversationListView> {
     return this.requireAssistantBuilderRuntime().listConversations()
@@ -1025,25 +935,6 @@ export class AgentTeamService extends Service {
     return { items, total: items.length }
   }
 
-  async updateRuntimeTeam(
-    teamId: string,
-    update: (team: TeamAggregate) => TeamAggregate,
-    kind: string,
-    summary: string,
-  ): Promise<TeamAggregate> {
-    const next = await this.store.updateTeam(teamId, current => {
-      const candidate = update(current)
-      return {
-        ...candidate,
-        revision: current.revision + 1,
-        updatedAt: new Date().toISOString(),
-      }
-    })
-    await this.activity(kind, teamId, next.revision, summary)
-    this.publish('team', teamId, next.revision, kind)
-    return next
-  }
-
   async putRuntimeMessage(message: TeamMessage): Promise<void> {
     await this.store.putMessage(message)
     const team = requireTeam(this.store, message.teamId)
@@ -1078,66 +969,6 @@ export class AgentTeamService extends Service {
       throw new AgentTeamError('INVALID_REQUEST', `Unknown operation '${id}'`)
     }
     return operation
-  }
-
-  private async validateAssistantReferences(input: CreateAssistantInput): Promise<void> {
-    const invalidSkill = input.skillAllowlist.find(name => !isSkillName(name))
-    if (invalidSkill !== undefined) {
-      throw new AgentTeamError('SKILL_REFERENCE_INVALID', `Invalid Skill name '${invalidSkill}'`)
-    }
-    const invalidMcpServer = input.mcpServers.find(name => !isMcpServerName(name))
-    if (invalidMcpServer !== undefined) {
-      throw new AgentTeamError('MCP_REFERENCE_INVALID', `Invalid MCP Server name '${invalidMcpServer}'`)
-    }
-    await this.validateReasoningEffort(input.provider, input.model, input.reasoningEffort)
-    try {
-      await this.ctx.agentPresets.resolve(input.agentPresetId)
-    } catch (error) {
-      throw new AgentTeamError(
-        'PRESET_REFERENCE_INVALID',
-        `Unknown agent preset '${input.agentPresetId}'`,
-        undefined,
-        { cause: error },
-      )
-    }
-    if (!this.ctx.permissionPresets.names.includes(input.permissionPresetId)) {
-      throw new AgentTeamError(
-        'PERMISSION_PRESET_INVALID',
-        `Unknown permission preset '${input.permissionPresetId}'`,
-      )
-    }
-    if (input.mcpServers.length > 0) {
-      const catalog = await this.mcpCatalog(input.agentPresetId)
-      const available = new Set(catalog.servers.map(server => server.name))
-      const missing = input.mcpServers.filter(name => !available.has(name))
-      if (missing.length > 0) {
-        throw new AgentTeamError(
-          'MCP_REFERENCE_INVALID',
-          `Agent Preset '${input.agentPresetId}' cannot access MCP Server(s): ${missing.join(', ')}`,
-          { missing },
-        )
-      }
-    }
-  }
-
-  private async validateReasoningEffort(
-    provider: string,
-    model: string,
-    reasoningEffort: string | undefined,
-  ): Promise<void> {
-    const capabilities = await this.modelCapabilities(provider, model)
-    if (reasoningEffort === undefined) return
-    const supported = capabilities.reasoning?.efforts.some(effort => effort.id === reasoningEffort) ?? false
-    if (!supported) {
-      throw new AgentTeamError(
-        'MODEL_REFERENCE_INVALID',
-        `Model '${provider}/${model}' does not support reasoning effort '${reasoningEffort}'`,
-        {
-          reasoningEffort,
-          supportedEfforts: capabilities.reasoning?.efforts.map(effort => effort.id) ?? [],
-        },
-      )
-    }
   }
 
   private async activity(kind: string, entityId: string, revision: number, summary: string): Promise<void> {
@@ -1187,60 +1018,6 @@ export class AgentTeamService extends Service {
   }
 }
 
-/** Replace every member of one team through a pure mapper. */
-function mapTeamMembers(
-  team: TeamAggregate,
-  change: (member: TeamMemberSlot) => TeamMemberSlot,
-): Record<string, TeamMemberSlot> {
-  return Object.fromEntries(Object.entries(team.members).map(([id, member]) => [id, change(member)]))
-}
-
-function assistantInputOf(assistant: AssistantTemplate): CreateAssistantInput {
-  return {
-    name: assistant.name,
-    ...(assistant.description === undefined ? {} : { description: assistant.description }),
-    ...(assistant.icon === undefined ? {} : { icon: assistant.icon }),
-    instructions: assistant.instructions,
-    provider: assistant.provider,
-    model: assistant.model,
-    ...(assistant.reasoningEffort === undefined ? {} : { reasoningEffort: assistant.reasoningEffort }),
-    agentPresetId: assistant.agentPresetId,
-    permissionPresetId: assistant.permissionPresetId,
-    skillAllowlist: [...assistant.skillAllowlist],
-    mcpServers: [...assistant.mcpServers],
-    ruleDocumentAllowlist: [...assistant.ruleDocumentAllowlist],
-  }
-}
-
-/**
- * The input schema keeps `ruleDocumentAllowlist` optional so older callers stay
- * valid, but every stored template carries it — hence the narrowed return type.
- */
-function normalizeAssistantInput(
-  input: CreateAssistantInput,
-): CreateAssistantInput & { ruleDocumentAllowlist: string[] } {
-  return {
-    ...input,
-    name: input.name.trim(),
-    provider: input.provider.trim(),
-    model: input.model.trim(),
-    ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort.trim() }),
-    agentPresetId: input.agentPresetId.trim(),
-    permissionPresetId: input.permissionPresetId.trim(),
-    skillAllowlist: unique(input.skillAllowlist),
-    mcpServers: unique(input.mcpServers),
-    ruleDocumentAllowlist: unique(input.ruleDocumentAllowlist ?? []),
-  }
-}
-
-/**
- * Normalize an imported path into `a/b/c.md`, rejecting anything that could
- * escape the document set (`..`) or that is not a usable path.
- */
-function unique(values: readonly string[]): string[] {
-  return [...new Set(values.map(value => value.trim()).filter(Boolean))]
-}
-
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
@@ -1253,3 +1030,6 @@ function withReasoningEffort(
   return reasoningEffort === undefined ? rest : { ...rest, reasoningEffort }
 }
 
+function unique(values: readonly string[]): string[] {
+  return [...new Set(values.map(value => value.trim()).filter(Boolean))]
+}

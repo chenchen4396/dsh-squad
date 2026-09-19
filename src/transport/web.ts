@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import type { Config } from '../config.js'
+import { interactionResponseSchema, PAYLOAD_SCHEMAS, parsePayload } from './payload-schemas.js'
 import { AgentTeamError, isAgentTeamError } from '../domain/errors.js'
 import type { AgentTeamService, AgentTeamChange } from '../service/agent-team-service.js'
 import {
@@ -22,24 +23,6 @@ const requestSchema = z.object({
   expectedRevision: z.int().positive().optional(),
   payload: z.unknown(),
 }).strict()
-
-const idPayload = z.object({ id: z.string().trim().min(1) }).strict()
-/** One Harness Session id: the conversation a team is enabled in. */
-const sessionIdPayload = z.string().trim().min(1).max(200)
-const interactionResponseSchema = z.discriminatedUnion('kind', [
-  z.object({
-    kind: z.literal('question'),
-    answers: z.array(z.object({
-      id: z.string().trim().min(1).max(200),
-      selected: z.array(z.string().min(1).max(500)).max(50),
-      custom: z.string().max(32_000).optional(),
-    }).strict()).min(1).max(32),
-  }).strict(),
-  z.object({
-    kind: z.literal('approval'),
-    outcome: z.enum(['allowed-once', 'rejected']),
-  }).strict(),
-])
 
 export interface WebTransport {
   dispose(): void
@@ -211,74 +194,53 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
   switch (request.method) {
     case 'catalog.get': return service.catalog()
     case 'catalog.model.get': {
-      const payload = z.object({
-        provider: z.string().trim().min(1).max(200),
-        model: z.string().trim().min(1).max(500),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('catalog.model.get', request.payload)
       return service.modelCapabilities(payload.provider, payload.model)
     }
     case 'skill.catalog': {
-      const payload = z.object({ agentPresetId: z.string().trim().min(1).max(200) }).strict().parse(request.payload)
+      const payload = parsePayload('skill.catalog', request.payload)
       return service.skillCatalog(payload.agentPresetId)
     }
     case 'mcp.catalog': {
-      const payload = z.object({ agentPresetId: z.string().trim().min(1).max(200) }).strict().parse(request.payload)
+      const payload = parsePayload('mcp.catalog', request.payload)
       return service.mcpCatalog(payload.agentPresetId)
     }
     case 'assistant.list': return service.listAssistants()
-    case 'assistant.get': return service.getAssistant(idPayload.parse(request.payload).id)
+    case 'assistant.get': return service.getAssistant(parsePayload('assistant.get', request.payload).id)
     case 'assistant.create': return service.createAssistant(request.payload as never)
     case 'assistant.update': {
-      const payload = z.object({ id: z.string().min(1), value: z.unknown() }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.update', request.payload)
       return service.updateAssistant(payload.id, payload.value as never, options)
     }
     case 'assistant.clone': {
-      const payload = z.object({ id: z.string().min(1), name: z.string().optional() }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.clone', request.payload)
       return service.cloneAssistant(payload.id, payload.name)
     }
-    case 'assistant.delete': await service.deleteAssistant(idPayload.parse(request.payload).id); return null
+    case 'assistant.delete': await service.deleteAssistant(parsePayload('assistant.delete', request.payload).id); return null
     case 'assistant.builder.list': return service.listAssistantBuilderConversations()
     case 'assistant.builder.draft.get': return service.getAssistantBuilderDraft()
     case 'assistant.builder.draft.configure': {
-      const payload = z.object({
-        provider: z.string().trim().min(1).max(200),
-        model: z.string().trim().min(1).max(500),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.builder.draft.configure', request.payload)
       return service.configureAssistantBuilderDraft(payload.provider, payload.model)
     }
     case 'assistant.builder.start': {
-      const payload = z.object({
-        provider: z.string().trim().min(1).max(200),
-        model: z.string().trim().min(1).max(500),
-        content: z.string().trim().min(1).max(32_000),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.builder.start', request.payload)
       return service.startAssistantBuilderConversation(payload.provider, payload.model, payload.content)
     }
     case 'assistant.builder.get': {
-      const payload = z.object({ sessionId: z.string().trim().min(1).max(200) }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.builder.get', request.payload)
       return service.getAssistantBuilderConversation(payload.sessionId)
     }
     case 'assistant.builder.configure': {
-      const payload = z.object({
-        sessionId: z.string().trim().min(1).max(200),
-        provider: z.string().trim().min(1).max(200),
-        model: z.string().trim().min(1).max(500),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.builder.configure', request.payload)
       return service.configureAssistantBuilder(payload.sessionId, payload.provider, payload.model)
     }
     case 'assistant.builder.send': {
-      const payload = z.object({
-        sessionId: z.string().trim().min(1).max(200),
-        content: z.string().trim().min(1).max(32_000),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.builder.send', request.payload)
       return service.sendAssistantBuilderMessage(payload.sessionId, payload.content)
     }
     case 'assistant.builder.interaction.respond': {
-      const payload = z.object({
-        sessionId: z.string().trim().min(1).max(200),
-        interactionId: z.string().trim().min(1).max(500),
-        response: interactionResponseSchema,
-      }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.builder.interaction.respond', request.payload)
       await service.respondToAssistantBuilderInteraction(
         payload.sessionId,
         payload.interactionId,
@@ -296,46 +258,38 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
       return { accepted: true }
     }
     case 'assistant.builder.stop': {
-      const payload = z.object({ sessionId: z.string().trim().min(1).max(200) }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.builder.stop', request.payload)
       await service.stopAssistantBuilder(payload.sessionId)
       return { accepted: true }
     }
     case 'assistant.builder.archive': {
-      const payload = z.object({ sessionId: z.string().trim().min(1).max(200) }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.builder.archive', request.payload)
       await service.archiveAssistantBuilderConversation(payload.sessionId)
       return { archived: true }
     }
     case 'team.list': return service.listTeams()
-    case 'team.get': return service.getTeam(idPayload.parse(request.payload).id)
+    case 'team.get': return service.getTeam(parsePayload('team.get', request.payload).id)
     case 'team.createDraft': return service.createTeamDraft(request.payload as never)
     case 'team.clone': {
-      const payload = z.object({
-        teamId: z.string().trim().min(1).max(200),
-        name: z.string().trim().min(1).max(500),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.clone', request.payload)
       return service.cloneTeam(payload.teamId, { name: payload.name })
     }
-    case 'team.start': return service.startTeam(idPayload.parse(request.payload).id, options)
+    case 'team.start': return service.startTeam(parsePayload('team.start', request.payload).id, options)
     case 'team.addMember': {
-      const payload = z.object({ teamId: z.string().min(1), value: z.unknown() }).strict().parse(request.payload)
+      const payload = parsePayload('team.addMember', request.payload)
       return service.addMember(payload.teamId, payload.value as never, options)
     }
     case 'team.removeMember': {
-      const payload = z.object({ teamId: z.string().min(1), slotId: z.string().min(1) }).strict().parse(request.payload)
+      const payload = parsePayload('team.removeMember', request.payload)
       return service.removeMember(payload.teamId, payload.slotId, options)
     }
     case 'team.changeLeader': {
-      const payload = z.object({ teamId: z.string().min(1), successorSlotId: z.string().min(1) }).strict().parse(request.payload)
+      const payload = parsePayload('team.changeLeader', request.payload)
       return service.changeLeader(payload.teamId, payload.successorSlotId, options)
     }
-    case 'team.message.list': return service.listMessages(idPayload.parse(request.payload).id)
+    case 'team.message.list': return service.listMessages(parsePayload('team.message.list', request.payload).id)
     case 'team.message.send': {
-      const payload = z.object({
-        teamId: z.string().min(1),
-        content: z.string(),
-        conversationId: sessionIdPayload,
-        targetSlotId: z.string().min(1).optional(),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.message.send', request.payload)
       return service.sendUserMessage(
         payload.teamId,
         payload.conversationId,
@@ -344,19 +298,11 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
       )
     }
     case 'team.workbench.get': {
-      const payload = z.object({
-        id: z.string().trim().min(1).max(200),
-        conversationId: sessionIdPayload,
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.workbench.get', request.payload)
       return service.getWorkbench(payload.id, payload.conversationId)
     }
     case 'team.workbench.older': {
-      const payload = z.object({
-        id: z.string().trim().min(1).max(200),
-        conversationId: sessionIdPayload,
-        slotId: z.string().trim().min(1).max(200),
-        beforeSeq: z.int().nonnegative(),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.workbench.older', request.payload)
       return service.getOlderMemberConversation(
         payload.id,
         payload.conversationId,
@@ -365,7 +311,7 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
       )
     }
     case 'team.session.get': {
-      const payload = z.object({ sessionId: sessionIdPayload }).strict().parse(request.payload)
+      const payload = parsePayload('team.session.get', request.payload)
       const conversation = service.findConversationBySession(payload.sessionId)
       if (conversation === undefined) return { sessionId: payload.sessionId }
       return {
@@ -375,52 +321,34 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
       }
     }
     case 'team.session.bind': {
-      const payload = z.object({
-        sessionId: sessionIdPayload,
-        teamId: z.string().trim().min(1).max(200),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.session.bind', request.payload)
       const conversation = await service.bindSession(payload.sessionId, payload.teamId)
       return { sessionId: payload.sessionId, team: service.getTeam(conversation.teamId), conversation }
     }
     case 'team.session.unbind': {
-      const payload = z.object({ sessionId: sessionIdPayload }).strict().parse(request.payload)
+      const payload = parsePayload('team.session.unbind', request.payload)
       await service.unbindSession(payload.sessionId)
       return { accepted: true }
     }
     case 'team.session.delegate': {
-      const payload = z.object({
-        sessionId: sessionIdPayload,
-        delegate: z.boolean(),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.session.delegate', request.payload)
       const conversation = await service.setSessionDelegation(payload.sessionId, payload.delegate)
       return { sessionId: payload.sessionId, team: service.getTeam(conversation.teamId), conversation }
     }
     case 'team.conversation.list': {
-      const payload = z.object({ teamId: z.string().trim().min(1).max(200) }).strict().parse(request.payload)
+      const payload = parsePayload('team.conversation.list', request.payload)
       return service.listConversations(payload.teamId)
     }
     case 'team.room.get': {
-      const payload = z.object({
-        teamId: z.string().trim().min(1).max(200),
-        conversationId: sessionIdPayload,
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.room.get', request.payload)
       return service.getRoom(payload.teamId, payload.conversationId)
     }
     case 'team.room.older': {
-      const payload = z.object({
-        teamId: z.string().trim().min(1).max(200),
-        conversationId: sessionIdPayload,
-        beforeTime: z.int().nonnegative(),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.room.older', request.payload)
       return service.getRoom(payload.teamId, payload.conversationId, payload.beforeTime)
     }
     case 'team.room.send': {
-      const payload = z.object({
-        teamId: z.string().trim().min(1).max(200),
-        content: z.string(),
-        conversationId: sessionIdPayload,
-        mentions: z.array(z.string().trim().min(1).max(200)).max(64).optional(),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.room.send', request.payload)
       return service.sendRoomMessage(
         payload.teamId,
         payload.content,
@@ -429,22 +357,12 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
       )
     }
     case 'team.member.stop': {
-      const payload = z.object({
-        teamId: z.string().min(1),
-        slotId: z.string().min(1),
-        conversationId: sessionIdPayload,
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.member.stop', request.payload)
       await service.stopMember(payload.teamId, payload.slotId, payload.conversationId)
       return { accepted: true }
     }
     case 'team.interaction.respond': {
-      const payload = z.object({
-        teamId: z.string().trim().min(1).max(200),
-        slotId: z.string().trim().min(1).max(200),
-        interactionId: z.string().trim().min(1).max(300),
-        response: interactionResponseSchema,
-        conversationId: sessionIdPayload,
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.interaction.respond', request.payload)
       await service.respondToInteraction(
         payload.teamId,
         payload.slotId,
@@ -466,7 +384,7 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
     case 'assistant.ruleDocuments.list':
       return documentCatalog(service)
     case 'assistant.ruleDocuments.get': {
-      const payload = z.object({ id: z.string().min(1) }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.ruleDocuments.get', request.payload)
       const document = service.getRuleDocument(payload.id)
       return {
         id: document.id,
@@ -489,8 +407,7 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
       return documentCatalog(service)
     }
     case 'bundle.export': {
-      const payload = z.object({ teamIds: z.array(z.string().trim().min(1)).max(200).optional() })
-        .strict().parse(request.payload)
+      const payload = parsePayload('bundle.export', request.payload)
       return service.exportBundle(payload)
     }
     case 'bundle.import': {
@@ -501,43 +418,24 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
       return service.importBundle(payload)
     }
     case 'assistant.ruleDocuments.delete': {
-      const payload = z.object({ id: z.string().min(1) }).strict().parse(request.payload)
+      const payload = parsePayload('assistant.ruleDocuments.delete', request.payload)
       await service.deleteRuleDocument(payload.id)
       return documentCatalog(service)
     }
     case 'team.workspace.list': {
-      const payload = z.object({
-        teamId: z.string().min(1),
-        conversationId: z.string().min(1).optional(),
-        path: z.string().max(4096).optional(),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.workspace.list', request.payload)
       return service.listWorkspace(payload.teamId, payload.conversationId, payload.path)
     }
     case 'team.workspace.search': {
-      const payload = z.object({
-        teamId: z.string().min(1),
-        conversationId: z.string().min(1).optional(),
-        query: z.string().max(4096).optional(),
-        limit: z.int().min(1).max(100).optional(),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.workspace.search', request.payload)
       return service.searchWorkspace(payload.teamId, payload.conversationId, payload.query, payload.limit)
     }
     case 'team.workspace.changes': {
-      const payload = z.object({
-        teamId: z.string().min(1),
-        conversationId: z.string().min(1).optional(),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.workspace.changes', request.payload)
       return service.getWorkspaceChanges(payload.teamId, payload.conversationId)
     }
     case 'team.workspace.diff': {
-      const payload = z.object({
-        teamId: z.string().min(1),
-        conversationId: z.string().min(1).optional(),
-        path: z.string().min(1).max(4096),
-        scope: z.enum(['staged', 'unstaged']),
-        layout: z.enum(['unified', 'split']),
-        theme: z.enum(['light', 'dark']),
-      }).strict().parse(request.payload)
+      const payload = parsePayload('team.workspace.diff', request.payload)
       return service.getWorkspaceDiff(
         payload.teamId,
         payload.conversationId,
@@ -548,7 +446,7 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
       )
     }
     case 'team.dissolve': {
-      const payload = z.object({ teamId: z.string().min(1), confirmation: z.string() }).strict().parse(request.payload)
+      const payload = parsePayload('team.dissolve', request.payload)
       await service.dissolveTeam(payload.teamId, payload.confirmation, options)
       return null
     }

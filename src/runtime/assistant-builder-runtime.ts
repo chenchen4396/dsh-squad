@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { Config } from '../config.js'
 import { AssistantDraftStore } from './assistant-builder-drafts.js'
 import { registerAssistantBuilderTools } from './assistant-builder-tools.js'
+import * as assistantBuilderSetup from './assistant-builder-setup.js'
 import { AgentTeamError } from '../domain/errors.js'
 import type { AgentTeamService } from '../service/agent-team-service.js'
 import type {
@@ -353,6 +354,17 @@ export class AssistantBuilderRuntime {
     this.configuration = nextConfiguration
   }
 
+  /** What the builder's Agent setup needs from this runtime. */
+  private setupDeps(): assistantBuilderSetup.BuilderSetupDeps {
+    return {
+      ctx: this.ctx,
+      service: this.service,
+      drafts: this.drafts,
+      interactions: this.interactions,
+      assertToolIdentity: (id, sessionId) => this.assertToolIdentity(id, sessionId),
+    }
+  }
+
   private async start(rawSessionId: string, allowCreate: boolean): Promise<AgentHandle> {
     const sessionId = SessionId(rawSessionId)
     const cwd = process.cwd()
@@ -376,46 +388,11 @@ export class AssistantBuilderRuntime {
         configuration.model,
       )
     }
-    const setup = async (agentCtx: Context, agent: Agent): Promise<void> => {
-      this.interactions.attach(agentCtx, agent)
-      await this.ctx.agentPresets.mount(agentCtx, configuration.agentPresetId)
-      agentCtx.tools.presentAs('native')
-      if (agent.session.header.cwd === undefined) {
-        agentCtx.systemPrompt.variable('cwd', () => cwd)
-      }
-      const allowedTools = new Set([
-        'assistant_builder_get_catalog',
-        'assistant_builder_prepare',
-        'assistant_builder_commit',
-        'ask_user_question',
-      ])
-      agentCtx.tools.guard(execution => allowedTools.has(execution.name)
-        ? undefined
-        : 'The built-in Assistant Builder may only read its catalog, prepare a draft, and commit an explicitly confirmed draft.')
-      registerAssistantBuilderTools(agentCtx, rawSessionId, {
-        service: this.service,
-        drafts: this.drafts,
-        assertIdentity: (id, target) => { this.assertToolIdentity(id, target) },
-      })
-      const deniedTools = agentCtx.tools.schemas(agent)
-        .map(tool => tool.name)
-        .filter(name => !allowedTools.has(name))
-      if (deniedTools.length > 0) agentCtx.tools.restrict({ deny: deniedTools })
-      const promptSection = 'agent-team:assistant-builder'
-      agentCtx.systemPrompt.section({
-        name: promptSection,
-        order: 10,
-        text: ASSISTANT_BUILDER_PROMPT,
-      })
-      this.ctx.permissionPresets.set(agent.session, configuration.permissionPresetId)
-      const assembly = await agentCtx.systemPrompt.assemble(assembleContextFor(agent))
-      if (!assembly.sections.some(section => section.name === promptSection)) {
-        throw new AgentTeamError(
-          'PRESET_PROMPT_INCOMPATIBLE',
-          `Preset '${configuration.agentPresetId}' replaced the Assistant Builder prompt`,
-        )
-      }
-    }
+    const setup = assistantBuilderSetup.assistantBuilderSetup(this.setupDeps(), {
+      sessionId: rawSessionId,
+      configuration,
+      cwd,
+    })
     const agentOptions = { provider: configuration.provider, model: configuration.model }
     const persisted = (await this.ctx.sessionPersistence.list())
       .some(snapshot => String(snapshot.header.id) === rawSessionId)

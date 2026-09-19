@@ -263,3 +263,61 @@ export function AssistantManagementDialog({
     </AnimatedModal>
   )
 }
+
+/**
+ * Confirm taking one member out of a team.
+ *
+ * The workbench and the team detail page each reach this, and each had its own
+ * copy — the same warning, word for word, down to the sentence about
+ * unfinished tasks. A member with open work is refused by the service, so the
+ * wording is a promise the runtime keeps, and two copies of it is one too many.
+ */
+export function RemoveTeamMemberDialog({
+  open,
+  member,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean
+  /** The member being removed; the dialog names it. */
+  member: { displayName: string } | undefined
+  busy: boolean
+  error: string | undefined
+  onCancel: () => void
+  onConfirm: () => void
+}): JSX.Element {
+  return (
+    <AnimatedModal
+      open={open}
+      onClose={() => { if (!busy) onCancel() }}
+      title="移出团队成员"
+      closeLabel="关闭"
+      description="该成员将停止参与当前团队。"
+      className={css.memberRemoveDialog ?? ''}
+      footer={(
+        <>
+          <Button variant="outline" disabled={busy} onClick={onCancel}>取消</Button>
+          <Button
+            variant="outline"
+            className={css.dangerAction}
+            disabled={busy}
+            onClick={onConfirm}
+          >
+            {busy ? '移出中…' : '确认移出'}
+          </Button>
+        </>
+      )}
+    >
+      <div className={css.memberRemoveConfirm}>
+        <div className={css.memberRemoveIcon} aria-hidden="true">−</div>
+        <div>
+          <strong>确定移出“{member?.displayName}”？</strong>
+          <p>该成员将停止参与团队；若仍有未完成任务，系统会阻止移出。助手模板和 Session 历史都会保留。</p>
+        </div>
+        {error && <div role="alert" className={css.inlineError}>{error}</div>}
+      </div>
+    </AnimatedModal>
+  )
+}

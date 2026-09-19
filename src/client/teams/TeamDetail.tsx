@@ -11,7 +11,7 @@ import { callAgentTeam, subscribeAgentTeamConversation } from '../api.js'
 import css from '../AgentTeam.module.css'
 import { orderedMembers } from '../../domain/team-selectors.js'
 import { assistantForMember } from '../member-assistant.js'
-import { AddTeamMemberDialog, CloneTeamDialog } from './TeamDialogs.js'
+import { AddTeamMemberDialog, CloneTeamDialog, RemoveTeamMemberDialog } from './TeamDialogs.js'
 import { mergeMemberConversation, mergeWorkbenchLoad, prependMemberPage } from '../conversation-nodes.js'
 import { CrownIcon } from '../icons/CrownIcon.js'
 import { memberStatusLabel, modelDisplayName } from '../labels.js'
@@ -272,49 +272,17 @@ export function TeamDetail({
           await onChanged()
         }}
       />
-      <AnimatedModal
+      <RemoveTeamMemberDialog
         open={memberToRemove !== undefined}
-        onClose={() => {
-          if (busy) return
+        member={memberToRemove}
+        busy={busy}
+        error={error}
+        onCancel={() => {
           setMemberToRemove(undefined)
           setError(undefined)
         }}
-        title="移出团队成员"
-        closeLabel="关闭"
-        description="该成员将停止参与当前团队。"
-        className={css.memberRemoveDialog ?? ''}
-        footer={(
-          <>
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                setMemberToRemove(undefined)
-                setError(undefined)
-              }}
-            >
-              取消
-            </Button>
-            <Button
-              variant="outline"
-              className={css.dangerAction}
-              disabled={busy}
-              onClick={() => { void removeMember() }}
-            >
-              {busy ? '移出中…' : '确认移出'}
-            </Button>
-          </>
-        )}
-      >
-        <div className={css.memberRemoveConfirm}>
-          <div className={css.memberRemoveIcon} aria-hidden="true">−</div>
-          <div>
-            <strong>确定移出“{memberToRemove?.displayName}”？</strong>
-            <p>该成员将停止参与团队；若仍有未完成任务，系统会阻止移出。助手模板和 Session 历史都会保留。</p>
-          </div>
-          {error && <div role="alert" className={css.inlineError}>{error}</div>}
-        </div>
-      </AnimatedModal>
+        onConfirm={() => { void removeMember() }}
+      />
       <AnimatedModal
         open={dissolveOpen}
         onClose={() => {

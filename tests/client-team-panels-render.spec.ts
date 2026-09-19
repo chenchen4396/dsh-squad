@@ -201,3 +201,50 @@ describe('the assistant management dialog', () => {
     expect(html).toBe('')
   })
 })
+
+describe('the remove-member confirmation', () => {
+  it('names the member and says what is kept', async () => {
+    const { RemoveTeamMemberDialog } = await import('../src/client/teams/TeamDialogs.js')
+    const html = renderToStaticMarkup(createElement(RemoveTeamMemberDialog, {
+      open: true,
+      member: { displayName: 'SE' },
+      busy: false,
+      error: undefined,
+      onCancel: () => {},
+      onConfirm: () => {},
+    }))
+    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
+    expect(text).toContain('确定移出“SE”')
+    // The warning is a promise the service keeps: a member with open work is
+    // refused. Both call sites must say the same thing.
+    expect(text).toContain('未完成任务')
+    expect(text).toContain('Session 历史都会保留')
+    expect(text).toContain('确认移出')
+  })
+
+  it('reports a failure instead of closing quietly', async () => {
+    const { RemoveTeamMemberDialog } = await import('../src/client/teams/TeamDialogs.js')
+    const html = renderToStaticMarkup(createElement(RemoveTeamMemberDialog, {
+      open: true,
+      member: { displayName: 'SE' },
+      busy: false,
+      error: '该成员仍有未完成任务',
+      onCancel: () => {},
+      onConfirm: () => {},
+    }))
+    expect(html.replace(/<[^>]+>/g, ' ')).toContain('该成员仍有未完成任务')
+  })
+
+  it('says it is working rather than looking idle', async () => {
+    const { RemoveTeamMemberDialog } = await import('../src/client/teams/TeamDialogs.js')
+    const html = renderToStaticMarkup(createElement(RemoveTeamMemberDialog, {
+      open: true,
+      member: { displayName: 'SE' },
+      busy: true,
+      error: undefined,
+      onCancel: () => {},
+      onConfirm: () => {},
+    }))
+    expect(html.replace(/<[^>]+>/g, ' ')).toContain('移出中')
+  })
+})

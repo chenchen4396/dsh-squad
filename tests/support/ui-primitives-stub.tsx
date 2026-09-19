@@ -31,7 +31,6 @@ function icon(tag: string) {
 
 export const Button = element('button')
 export const Menu = element('div')
-export const Modal = element('div')
 export const Tooltip = element('span')
 export const Tag = element('span')
 /**
@@ -39,6 +38,18 @@ export const Tag = element('span')
  * keeps visible while collapsed. Dropping them would make a test unable to see
  * what identifies a collapsed row.
  */
+/**
+ * Renders what the modal is for: its title, its body and its footer. A stub
+ * that dropped the footer would hide every dialog's actions from a test.
+ */
+export const Modal = ({
+  open,
+  title,
+  children,
+  footer,
+}: Props & { open?: boolean; title?: ReactNode; footer?: ReactNode }) =>
+  open === false ? null : createElement('div', { title }, children ?? null, footer ?? null)
+
 export const DisclosureRow = ({
   title,
   icon,

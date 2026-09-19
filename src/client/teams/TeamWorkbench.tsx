@@ -13,7 +13,7 @@ import css from '../AgentTeam.module.css'
 import { orderedMembers } from '../../domain/team-selectors.js'
 import { MemberColumn } from './MemberColumn.js'
 import { TaskFlowChart } from './TaskFlowChart.js'
-import { AddTeamMemberDialog, CloneTeamDialog } from './TeamDialogs.js'
+import { AddTeamMemberDialog, CloneTeamDialog, RemoveTeamMemberDialog } from './TeamDialogs.js'
 import { CrownIcon } from '../icons/CrownIcon.js'
 import { TeamDetail } from './TeamDetail.js'
 import { mergeMemberConversation, mergeWorkbenchLoad, prependMemberPage } from '../conversation-nodes.js'
@@ -461,49 +461,17 @@ export function TeamWorkbench({
         onClose={() => { setAddMemberOpen(false) }}
         onChanged={async () => { await onChanged(); await load() }}
       />
-      <AnimatedModal
+      <RemoveTeamMemberDialog
         open={memberToRemove !== undefined}
-        onClose={() => {
-          if (memberActionBusy) return
+        member={memberToRemove}
+        busy={memberActionBusy}
+        error={memberActionError}
+        onCancel={() => {
           setMemberToRemove(undefined)
           setMemberActionError(undefined)
         }}
-        title="移出团队成员"
-        closeLabel="关闭"
-        description="该成员将停止参与当前团队。"
-        className={css.memberRemoveDialog ?? ''}
-        footer={(
-          <>
-            <Button
-              variant="outline"
-              disabled={memberActionBusy}
-              onClick={() => {
-                setMemberToRemove(undefined)
-                setMemberActionError(undefined)
-              }}
-            >
-              取消
-            </Button>
-            <Button
-              variant="outline"
-              className={css.dangerAction}
-              disabled={memberActionBusy}
-              onClick={() => { void removeMember() }}
-            >
-              {memberActionBusy ? '移出中…' : '确认移出'}
-            </Button>
-          </>
-        )}
-      >
-        <div className={css.memberRemoveConfirm}>
-          <div className={css.memberRemoveIcon} aria-hidden="true">−</div>
-          <div>
-            <strong>确定移出“{memberToRemove?.displayName}”？</strong>
-            <p>该成员将停止参与团队；若仍有未完成任务，系统会阻止移出。助手模板和 Session 历史都会保留。</p>
-          </div>
-          {memberActionError && <div role="alert" className={css.inlineError}>{memberActionError}</div>}
-        </div>
-      </AnimatedModal>
+        onConfirm={() => { void removeMember() }}
+      />
     </div>
   )
 }

@@ -153,7 +153,7 @@ export function useAgentTeamData(includeTeams: boolean, active = true): {
 export function AgentTeamSettingsSection(_props: SettingsSectionOwnerProps): JSX.Element {
   const { catalog, assistants, loading, error, load } = useAgentTeamData(false)
   return (
-    <section className={css.settingsSection}>
+    <section className={`${css.agentTeamRoot} ${css.settingsSection}`}>
       <div className={css.settingsHeading}>
         <div>
           <h1 className={css.settingsTitle}>dsh-squad</h1>
@@ -184,7 +184,7 @@ export function AgentTeamPanel(): JSX.Element {
   const headerTitle = selectedTeam?.name ?? 'dsh-squad'
 
   return (
-    <section className={css.panel} aria-label="dsh-squad">
+    <section className={`${css.agentTeamRoot} ${css.panel}`} aria-label="dsh-squad">
       <header className={css.shellHeader}>
         {selectedTeamId !== undefined && (
           <button

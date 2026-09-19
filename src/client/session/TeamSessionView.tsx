@@ -110,7 +110,7 @@ export function AgentTeamSessionView({ sessionId }: { sessionId: string }): JSX.
 
   if (boundTeam !== undefined && boundConversation !== undefined) {
     return (
-      <div className={css.sessionView} data-conversation-composer-overlay="">
+      <div className={`${css.agentTeamRoot} ${css.sessionView}`} data-conversation-composer-overlay="">
         <header className={css.sessionViewHeader}>
           <div className={css.sessionViewCopy}>
             <strong className={css.sessionViewTitle} title={boundTeam.name}>{boundTeam.name}</strong>
@@ -142,7 +142,7 @@ export function AgentTeamSessionView({ sessionId }: { sessionId: string }): JSX.
   }
 
   return (
-    <div className={css.sessionView} data-conversation-composer-overlay="">
+    <div className={`${css.agentTeamRoot} ${css.sessionView}`} data-conversation-composer-overlay="">
       <header className={css.sessionViewHeader}>
         <div className={css.sessionViewCopy}>
           <strong className={css.sessionViewTitle}>团队</strong>

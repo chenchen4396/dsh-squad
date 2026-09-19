@@ -7,7 +7,6 @@ import {
   type BundleImportSummary,
   type SquadBundle,
 } from '../domain/bundle.js'
-import { taskAssigneeIds } from '../domain/team-selectors.js'
 import type { TeamMemberSlot, TeamTask } from '../domain/types.js'
 import type { AgentTeamStore } from '../storage/store.js'
 
@@ -22,9 +21,11 @@ import type { AgentTeamStore } from '../storage/store.js'
 /**
  * Write what this instance is configured with into a portable file.
  *
- * Only configuration is exported. A team's conversations, member Sessions,
- * task results and file leases describe this machine's running state; they
- * would not survive the move and are not what a reader wants to share.
+ * Only configuration is exported: which assistants exist, what they are told to
+ * do and allowed to touch, which rules they load, and how a team is arranged.
+ * A team's conversations, its members' Sessions, its task board and its file
+ * leases are the state of one running team on one machine — they would not
+ * survive the move, and the panel has always told the reader they stay behind.
  */
 export function exportConfigured(
 store: AgentTeamStore,
@@ -75,7 +76,6 @@ input: { teamIds?: readonly string[] | undefined } = {},
     })),
     teams: teams.map(team => {
       const memberKeys = new Map(Object.keys(team.members).map(id => [id, `member:${id}`]))
-      const taskKeys = new Map(Object.keys(team.tasks).map(id => [id, `task:${id}`]))
       const members: SquadBundle['teams'][number]['members'] = {}
       for (const [id, member] of Object.entries(team.members)) {
         const assistantKey = assistantKeys.get(member.assistantId)
@@ -88,21 +88,6 @@ input: { teamIds?: readonly string[] | undefined } = {},
           assistantKey,
         }
       }
-      const tasks: SquadBundle['teams'][number]['tasks'] = {}
-      for (const [id, task] of Object.entries(team.tasks)) {
-        tasks[taskKeys.get(id)!] = {
-          key: taskKeys.get(id)!,
-          title: task.title,
-          description: task.description,
-          ownerKeys: taskAssigneeIds(task)
-            .map(owner => memberKeys.get(owner))
-            .filter((key): key is string => key !== undefined),
-          dependencyIds: (task.dependencyIds ?? [])
-            .map(dep => taskKeys.get(dep))
-            .filter((key): key is string => key !== undefined),
-          fileScopes: [...task.fileScopes],
-        }
-      }
       const leaderKey = memberKeys.get(team.leaderSlotId)
       return {
         name: team.name,
@@ -111,7 +96,6 @@ input: { teamIds?: readonly string[] | undefined } = {},
           ? leaderKey
           : Object.keys(members)[0] ?? 'member:leader',
         members,
-        tasks,
       }
     }).filter(team => Object.keys(team.members).length > 0),
   }
@@ -270,27 +254,11 @@ export async function importInto(store: AgentTeamStore, raw: unknown): Promise<B
     }
 
     const tasks: Record<string, TeamTask> = {}
-    const taskIds = new Map<string, string>()
-    for (const [key, task] of Object.entries(team.tasks)) taskIds.set(key, randomUUID())
-    for (const [key, task] of Object.entries(team.tasks)) {
-      const id = taskIds.get(key)!
-      tasks[id] = {
-        id,
-        title: task.title,
-        description: task.description,
-        status: 'pending',
-        ownerSlotIds: task.ownerKeys
-          .map(owner => memberIds.get(owner))
-          .filter((value): value is string => value !== undefined),
-        createdBySlotId: leaderSlotId,
-        dependencyIds: task.dependencyIds
-          .map(dep => taskIds.get(dep))
-          .filter((value): value is string => value !== undefined),
-        fileScopes: [...task.fileScopes],
-        revision: 1,
-        createdAt: now,
-        updatedAt: now,
-      }
+    // A file written before tasks stopped travelling still carries one. It is
+    // dropped rather than imported, and said out loud: a team arriving with
+    // somebody else's unfinished work would be worse than one arriving empty.
+    if (team.tasks !== undefined) {
+      warnings.push(`团队「${team.name}」的文件带着任务清单，已按导出的约定丢弃`)
     }
 
     await store.putTeam({

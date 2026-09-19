@@ -919,12 +919,11 @@ describe('AgentTeamService', () => {
     expect(bundle.teams).toHaveLength(1)
     const exported = bundle.teams[0]!
     expect(Object.keys(exported.members)).toHaveLength(2)
-    const exportedTasks = Object.values(exported.tasks)
-    expect(exportedTasks.map(item => item.title).sort()).toEqual(['先做', '后做'])
-    // The dependency is expressed as a key inside the file, not a storage id.
-    const later = exportedTasks.find(item => item.title === '后做')!
-    const earlier = exportedTasks.find(item => item.title === '先做')!
-    expect(later.dependencyIds).toEqual([earlier.key])
+    // The task board is the session's work, in the words it was asked in. The
+    // panel has always told the reader it stays behind, so it does.
+    expect(exported.tasks).toBeUndefined()
+    expect(JSON.stringify(bundle)).not.toContain('先做')
+    expect(JSON.stringify(bundle)).not.toContain('后做')
 
     // Importing it elsewhere gives a working, independent copy.
     const target = createHarness()
@@ -938,18 +937,52 @@ describe('AgentTeamService', () => {
     expect(importedTeam.name).toBe('Bundle Team')
     expect(importedTeam.id).not.toBe(team.id)
     expect(importedTeam.state).toBe('draft')
+    // A team arrives arranged, with no work carried over from wherever it ran.
+    expect(Object.values(importedTeam.tasks)).toEqual([])
     // Every id is this instance's own: no record points at the source's storage.
     expect(Object.keys(importedTeam.members)).toHaveLength(2)
     for (const member of Object.values(importedTeam.members)) {
       expect(member.assistantId).not.toBe(assistant.id)
       expect(importedTeam.members[importedTeam.leaderSlotId]).toBeDefined()
     }
-    const importedTasks = Object.values(importedTeam.tasks)
-    expect(importedTasks).toHaveLength(2)
-    const importedLater = importedTasks.find(item => item.title === '后做')!
-    const importedEarlier = importedTasks.find(item => item.title === '先做')!
-    expect(importedLater.dependencyIds).toEqual([importedEarlier.id])
-    expect(importedLater.ownerSlotIds.every(owner => importedTeam.members[owner] !== undefined)).toBe(true)
+  })
+
+  it('drops the task board from a file that still carries one, and says so', async () => {
+    const service = createHarness().service
+    const assistant = await service.createAssistant(assistantInput())
+    const bundle = {
+      format: 'dsh-squad/bundle',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      assistants: [{
+        key: 'assistant:SE',
+        name: assistant.name,
+        instructions: assistant.instructions,
+        provider: assistant.provider,
+        model: assistant.model,
+        agentPresetId: assistant.agentPresetId,
+        permissionPresetId: assistant.permissionPresetId,
+        skillAllowlist: [],
+        mcpServers: [],
+        ruleDocumentKeys: [],
+      }],
+      ruleDocuments: [],
+      teams: [{
+        name: 'Old File Team',
+        directMemberChat: true,
+        leaderKey: 'member:one',
+        members: { 'member:one': { displayName: 'SE', role: 'leader', permissionPresetId: 'read-only', assistantKey: 'assistant:SE' } },
+        // Written before tasks stopped travelling.
+        tasks: { 'task:one': { key: 'task:one', title: '旧任务', description: '不该被导入', ownerKeys: [], dependencyIds: [], fileScopes: [] } },
+      }],
+    }
+
+    const summary = await service.importBundle({ bundle, mode: 'copy' })
+    expect(summary.teamsCreated).toBe(1)
+    // Refusing the file would fail an import over data the reader never asked
+    // for, so it is accepted and the loss is reported.
+    expect(summary.warnings.join(' ')).toContain('任务清单')
+    expect(Object.values(service.listTeams().items[0]!.tasks)).toEqual([])
   })
 
   it('keeps the same record when importing over what is already here', async () => {

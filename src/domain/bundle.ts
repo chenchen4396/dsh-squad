@@ -62,32 +62,26 @@ export const bundleMemberSchema = teamMemberSlotSchema.pick({
 }).strict()
 
 /**
- * One task, kept as a definition.
+ * One team, arranged but not running.
  *
- * Tasks travel because a team's arrangement is partly its work breakdown, but
- * only the part that is configuration: an execution record belongs to whoever
- * ran it and is deliberately dropped.
+ * No task board. A task's title and description are the work of one session —
+ * what that team was asked to do, in the words it was asked in — and the export
+ * panel has always told the reader they stay behind with the machine that ran
+ * them. They were being written into the file anyway, which is the one place
+ * this format disagreed with what it says it does.
  */
-export const bundleTaskSchema = z.object({
-  /** Local key. Referenced by `dependencyIds` and `ownerKeys`. */
-  key: z.string().trim().min(1),
-  title: z.string().trim().min(1),
-  description: z.string(),
-  /** Keys into this team's `members`. */
-  ownerKeys: z.array(z.string().trim().min(1)),
-  /** Keys into this team's `tasks`. */
-  dependencyIds: z.array(z.string().trim().min(1)),
-  fileScopes: z.array(z.string().trim().min(1)),
-}).strict()
-
-/** One team, arranged but not running. */
 export const bundleTeamSchema = z.object({
   name: z.string().trim().min(1),
   directMemberChat: z.boolean(),
   /** Local key into this team's `members`, marking the leader. */
   leaderKey: z.string().trim().min(1),
   members: z.record(z.string(), bundleMemberSchema),
-  tasks: z.record(z.string(), bundleTaskSchema),
+  /**
+   * Accepted and dropped, for files written before tasks stopped travelling.
+   * Refusing them would fail an import over data the reader never asked for;
+   * the import reports that it dropped them instead.
+   */
+  tasks: z.unknown().optional(),
 }).strict()
 
 export const squadBundleSchema = z.object({
@@ -104,7 +98,6 @@ export type BundleAssistant = z.infer<typeof bundleAssistantSchema>
 export type BundleRuleDocument = z.infer<typeof bundleRuleDocumentSchema>
 export type BundleTeam = z.infer<typeof bundleTeamSchema>
 export type BundleMember = z.infer<typeof bundleMemberSchema>
-export type BundleTask = z.infer<typeof bundleTaskSchema>
 
 /** What to do with something the target instance already has. */
 export type BundleImportMode = 'copy' | 'overwrite'

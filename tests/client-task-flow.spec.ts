@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { buildTaskGraph } from '../src/client/task-graph.js'
+import { FLOW_NODE, layoutTaskFlow } from '../src/client/task-flow.js'
 import {
-  FLOW_NODE,
   KEEP_RECENT_FINISHED,
   keptInFlow,
-  layoutTaskFlow,
   layoutTaskRegions,
   taskFlowRegion,
-} from '../src/client/task-flow.js'
+} from '../src/client/task-flow-regions.js'
 import type { TeamTask } from '../src/domain/types.js'
 
 /**

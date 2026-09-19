@@ -15,6 +15,7 @@ import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Config } from '../config.js'
 import { AgentTeamError } from '../domain/errors.js'
 import { LiveStreamBuffer } from './live-stream-buffer.js'
+import { memberAgentSetup } from './member-context.js'
 import { MemberRegistry } from './member-registry.js'
 import { OperationQueue } from './operation-queue.js'
 import { PublishCoalescer } from './publish-coalescer.js'
@@ -1523,163 +1524,19 @@ export class TeamRuntime {
         },
         assembled: undefined,
       }
-      const setup = async (agentCtx: Context, agent: Agent): Promise<void> => {
-        this.interactions.attach(agentCtx, agent)
-        // The Harness counts this child as one of the Session's subagents from
-        // its header alone; without the matching durable identity its subagent
-        // switcher waits forever for a catalog entry that never arrives.
-        identifyMemberAsSubagent(agent, member.displayName)
-        await this.ctx.agentPresets.mount(agentCtx, assistant.agentPresetId)
-        installModelSelection(agentCtx, modelSelection)
-        const identitySection = `agent-team:identity:${member.id}`
-        const rosterSection = `agent-team:roster:${team.id}`
-        agentCtx.systemPrompt.section({
-          name: identitySection,
-          order: 10,
-          text: () => {
-            const latest = this.service.getTeam(team.id)
-            const latestMember = latest.members[member.id]
-            return latestMember === undefined
-              ? 'This team membership is no longer active.'
-              : memberPrompt(
-                  latest,
-                  latestMember,
-                  this.service.assistantForMember(latestMember).instructions,
-                  this.rulesFor(latestMember),
-                )
+      const setup = memberAgentSetup(
+        {
+          ctx: this.ctx,
+          service: this.service,
+          interactions: this.interactions,
+          commands: this.commands,
+          rulesFor: (target: TeamMemberSlot) => this.rulesFor(target),
+          assertToolIdentity: (agent: Agent | undefined, teamId: string, convId: string, slotId: string) => {
+            this.assertToolIdentity(agent, teamId, convId, slotId)
           },
-        })
-        agentCtx.systemPrompt.section({
-          name: rosterSection,
-          order: 11,
-          text: () => rosterPrompt(this.service.getTeam(team.id)),
-        })
-        registerTeamTools(agentCtx, {
-          assertIdentity: agent => { this.assertToolIdentity(agent, team.id, conversationId, member.id) },
-          getTaskBoard: () => {
-            const latest = this.service.getTeam(team.id)
-            const tasks = Object.values(latest.tasks)
-              .filter(task => task.conversationId === conversationId)
-              .map(task => JSON.parse(JSON.stringify(task)) as Record<string, string | number | string[]>)
-            return { teamId: latest.id, revision: latest.revision, tasks }
-          },
-          createTask: input => this.commands.createTask(team.id, conversationId, member.id, input),
-          updateTask: input => this.commands.updateTask(team.id, conversationId, member.id, input),
-          sendMessage: (recipientSlotId, content, type, taskId) => (
-            this.commands.sendMemberMessage(
-              team.id,
-              conversationId,
-              member.id,
-              recipientSlotId,
-              content,
-              type,
-              taskId,
-            )
-          ),
-        })
-        const selectedMcpServers = new Set(assistant.mcpServers)
-        const mcpTools = agentCtx.tools.schemas(agent).flatMap(tool => {
-          const serverName = mcpServerFromToolName(tool.name)
-          return serverName === undefined ? [] : [{ name: tool.name, serverName }]
-        })
-        const availableMcpServers = new Set(mcpTools.map(tool => tool.serverName))
-        const missingMcpServers = [...selectedMcpServers]
-          .filter(serverName => !availableMcpServers.has(serverName))
-        if (missingMcpServers.length > 0) {
-          throw new AgentTeamError(
-            'MCP_REFERENCE_INVALID',
-            `Member '${member.displayName}' cannot access selected MCP Server(s): ${missingMcpServers.join(', ')}`,
-            { memberId: member.id, missing: missingMcpServers },
-          )
-        }
-        const deniedMcpTools = mcpTools
-          .filter(tool => !selectedMcpServers.has(tool.serverName))
-          .map(tool => tool.name)
-        if (deniedMcpTools.length > 0) agentCtx.tools.restrict({ deny: deniedMcpTools })
-        agentCtx.tools.guard(execution => {
-          const serverName = mcpServerFromToolName(execution.name)
-          return serverName === undefined || selectedMcpServers.has(serverName)
-            ? undefined
-            : 'This MCP Server is not selected for the assistant.'
-        })
-        const selectedSkills = new Set(assistant.skillAllowlist)
-        const skills = await this.ctx.skills.list({
-          cwd: workspace.path,
-          scope: agent,
-        })
-        const available = new Set(skills
-          .filter(skill => isModelInvocable(skill) || isUserInvocable(skill))
-          .map(skill => skill.name))
-        const missing = [...selectedSkills].filter(name => !available.has(name))
-        if (missing.length > 0) {
-          throw new AgentTeamError(
-            'SKILL_REFERENCE_INVALID',
-            `Member '${member.displayName}' cannot access selected Skill(s): ${missing.join(', ')}`,
-            { memberId: member.id, missing },
-          )
-        }
-        if (selectedSkills.size > 0 && agentCtx.tools.get('skill', agent) === undefined) {
-          throw new AgentTeamError(
-            'SKILL_REFERENCE_INVALID',
-            `Member '${member.displayName}' selected Skills, but its Agent Preset does not expose the skill loader`,
-            { memberId: member.id },
-          )
-        }
-        const presetScope = await this.ctx.agentPresets.standingKeyFor(
-          assistant.agentPresetId,
-        )
-        const skillSelectionProvider = `agent-team-selection-${member.id}`
-        await registerScopedSkillProvider(agentCtx, () => ({
-          name: skillSelectionProvider,
-          list: async options => {
-            const inherited = await this.ctx.skills.list({
-              cwd: options.cwd,
-              signal: options.signal,
-              scope: presetScope,
-            })
-            return inherited.filter(skill => !selectedSkills.has(skill.name)).map(skill => ({
-              name: skill.name,
-              description: skill.description,
-              invocation: { modelInvocable: false, userInvocable: false },
-              source: 'runtime',
-              provider: skillSelectionProvider,
-              rank: 0,
-              locator: skill.name,
-            }))
-          },
-          get: async candidate => ({
-            name: candidate.name,
-            description: candidate.description,
-            invocation: { modelInvocable: false, userInvocable: false },
-            source: 'runtime',
-            provider: skillSelectionProvider,
-            content: '',
-          }),
-        }))
-        agentCtx.tools.guard(execution => {
-          if (execution.name !== 'skill') return undefined
-          const name = skillNameFromArguments(execution.arguments)
-          return name !== undefined && selectedSkills.has(name)
-            ? undefined
-            : 'This Skill is not selected for the assistant.'
-        })
-        // The composition owns the permission: a member carries no settings of
-        // its own, so a team cannot start on a value its assistant no longer
-        // describes.
-        const settings = this.service.assistantSettingsFor(member)
-        this.ctx.permissionPresets.set(
-          agent.session,
-          settings?.permissionPresetId ?? member.permissionPresetId,
-        )
-        const assembly = await agentCtx.systemPrompt.assemble(assembleContextFor(agent))
-        const names = new Set(assembly.sections.map(section => section.name))
-        if (!names.has(identitySection) || !names.has(rosterSection)) {
-          throw new AgentTeamError(
-            'PRESET_PROMPT_INCOMPATIBLE',
-            `Preset '${assistant.agentPresetId}' replaced dsh-squad prompt sections`,
-          )
-        }
-      }
+        },
+        { team, conversation, member, assistant, modelSelection, workspace },
+      )
       const agentOptions = {
         provider: assistant.provider,
         model: assistant.model,
@@ -2053,9 +1910,6 @@ function withReasoningEffort(
   return reasoningEffort === undefined ? rest : { ...rest, reasoningEffort }
 }
 
-function skillNameFromArguments(value: unknown): string | undefined {  if (typeof value !== 'object' || value === null || !('name' in value)) return undefined
-  return typeof value.name === 'string' ? value.name : undefined
-}
 
 async function mapConcurrent<T>(
   values: readonly T[],

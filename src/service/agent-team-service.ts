@@ -19,6 +19,12 @@ import {
 
 // The service's public surface still names it here.
 export type { MutationOptions } from './store-guards.js'
+import {
+  type McpCatalogSnapshot,
+  type ModelCapabilitiesSnapshot,
+  type SkillCatalogSnapshot,
+} from './catalog-views.js'
+import * as catalogViews from './catalog-views.js'
 import * as assistants from './assistants-service.js'
 import * as teams from './teams-service.js'
 import {
@@ -127,33 +133,7 @@ export interface CatalogSnapshot {
   }>
 }
 
-export interface SkillCatalogSnapshot {
-  agentPresetId: string
-  skills: Array<{
-    name: string
-    description: string
-    source: string
-    modelInvocable: boolean
-    userInvocable: boolean
-  }>
-}
-
-export interface ModelCapabilitiesSnapshot {
-  provider: string
-  model: string
-  reasoning?: {
-    efforts: Array<{ id: string; name: string; description?: string }>
-    defaultEffort?: string
-  }
-}
-
-export interface McpCatalogSnapshot {
-  agentPresetId: string
-  servers: Array<{
-    name: string
-    tools: Array<{ name: string; description: string }>
-  }>
-}
+export type { McpCatalogSnapshot, ModelCapabilitiesSnapshot, SkillCatalogSnapshot } from './catalog-views.js'
 
 export class AgentTeamService extends Service {
   private readonly listeners = new Set<(change: AgentTeamChange) => void>()
@@ -226,73 +206,37 @@ export class AgentTeamService extends Service {
    * a moment later.
    */
   /** The deployment's providers, models and presets, cached behind one read. */
-  // ── The catalog: what this deployment offers ────────────────────────────────
+  // ── The catalog: what this deployment offers ────────────────────────────
+
+  /** The deployment's providers, models and presets, cached behind one read. */
   catalog(): Promise<CatalogSnapshot> {
     return this.catalogCache.get()
   }
 
-  async modelCapabilities(providerValue: string, modelValue: string): Promise<ModelCapabilitiesSnapshot> {
-    const provider = providerValue.trim()
-    const model = modelValue.trim()
-    let info: Awaited<ReturnType<Context['llm']['resolveModelInfo']>>
-    try {
-      info = await this.ctx.llm.resolveModelInfo(provider, model)
-    } catch (error) {
-      throw new AgentTeamError(
-        'MODEL_REFERENCE_INVALID',
-        `Cannot resolve model '${provider}/${model}'`,
-        undefined,
-        { cause: error },
-      )
-    }
-    return {
-      provider,
-      model,
-      ...(info.reasoning === undefined
-        ? {}
-        : {
-            reasoning: {
-              efforts: info.reasoning.efforts.map(effort => ({
-                id: String(effort.id),
-                name: effort.name,
-                ...(effort.description === undefined ? {} : { description: effort.description }),
-              })),
-              ...(info.reasoning.defaultEffort === undefined
-                ? {}
-                : { defaultEffort: String(info.reasoning.defaultEffort) }),
-            },
-          }),
-    }
+  // The three live reads belong to `catalog-views`; the service is where
+  // callers reach them.
+
+  async modelCapabilities(
+    provider: string,
+    model: string,
+  ): Promise<ModelCapabilitiesSnapshot> {
+    return await catalogViews.modelCapabilities(this.catalogDeps(), provider, model)
   }
 
   async skillCatalog(agentPresetId: string): Promise<SkillCatalogSnapshot> {
-    try {
-      await this.ctx.agentPresets.resolve(agentPresetId)
-      const scope = await this.ctx.agentPresets.standingKeyFor(agentPresetId)
-      if (this.ctx.tools.get('skill', scope) === undefined) {
-        return { agentPresetId, skills: [] }
-      }
-      const skills = await this.ctx.skills.list({ scope })
-      return {
-        agentPresetId,
-        skills: skills.filter(skill => isModelInvocable(skill) || isUserInvocable(skill)).map(skill => ({
-          name: skill.name,
-          description: skill.description,
-          source: skill.source,
-          modelInvocable: isModelInvocable(skill),
-          userInvocable: isUserInvocable(skill),
-        })),
-      }
-    } catch (error) {
-      if (error instanceof AgentTeamError) throw error
-      throw new AgentTeamError(
-        'PRESET_REFERENCE_INVALID',
-        `Cannot read Skills for agent preset '${agentPresetId}'`,
-        undefined,
-        { cause: error },
-      )
-    }
+    return await catalogViews.skillCatalog(this.catalogDeps(), agentPresetId)
   }
+
+  async mcpCatalog(agentPresetId: string): Promise<McpCatalogSnapshot> {
+    return await catalogViews.mcpCatalog(this.catalogDeps(), agentPresetId)
+  }
+
+  /** What reading the catalogs needs from this service. */
+  private catalogDeps(): catalogViews.CatalogDeps {
+    return { ctx: this.ctx }
+  }
+
+
 
   /**
    * Every imported rule document, newest last.
@@ -334,34 +278,6 @@ export class AgentTeamService extends Service {
     return deleteRuleDocument(this.ruleDocumentDeps(), id)
   }
 
-  async mcpCatalog(agentPresetId: string): Promise<McpCatalogSnapshot> {    try {
-      await this.ctx.agentPresets.resolve(agentPresetId)
-      const scope = await this.ctx.agentPresets.standingKeyFor(agentPresetId)
-      const servers = new Map<string, Array<{ name: string; description: string }>>()
-      for (const tool of this.ctx.tools.schemas(scope)) {
-        const serverName = mcpServerFromToolName(tool.name)
-        if (serverName === undefined) continue
-        const entries = servers.get(serverName) ?? []
-        entries.push({ name: tool.name, description: tool.description })
-        servers.set(serverName, entries)
-      }
-      return {
-        agentPresetId,
-        servers: [...servers.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([name, tools]) => ({
-          name,
-          tools: tools.sort((left, right) => left.name.localeCompare(right.name)),
-        })),
-      }
-    } catch (error) {
-      if (error instanceof AgentTeamError) throw error
-      throw new AgentTeamError(
-        'PRESET_REFERENCE_INVALID',
-        `Cannot read MCP Servers for agent preset '${agentPresetId}'`,
-        undefined,
-        { cause: error },
-      )
-    }
-  }
 
   /**
    * The assistant a member runs as, resolved live.

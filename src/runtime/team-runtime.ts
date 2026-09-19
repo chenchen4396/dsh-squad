@@ -22,6 +22,7 @@ import * as leaderAttachment from './leader-attachment.js'
 import { mapConcurrent } from './member-activation.js'
 import * as memberActivation from './member-activation.js'
 import * as teamRoom from './team-room.js'
+import * as teamTeardown from './team-teardown.js'
 import { subscribeRuntimeEvents } from './runtime-events.js'
 import { installCompositionSections, teamComposition } from './team-composition.js'
 import { MemberRegistry } from './member-registry.js'
@@ -308,6 +309,43 @@ export class TeamRuntime {
   }
 
   // ── Team lifecycle ──────────────────────────────────────────────────────
+
+  /** What taking a team apart needs from this runtime. */
+  private teardownDeps(): teamTeardown.TeardownDeps {
+    return {
+      ctx: this.ctx,
+      service: this.service,
+      members: this.members,
+      interactions: this.interactions,
+      messages: this.messages,
+      operations: this.operations,
+      host: {
+        detachLeader: sessionId => this.detachLeader(sessionId),
+        projectMemberConversation: (team, member, conversation, events) =>
+          this.projectMemberConversation(team, member, conversation, events),
+        requireAgentIn: (conversation, slotId) => this.requireAgentIn(conversation, slotId),
+        requireConversation: (teamId, conversationId) => this.requireConversation(teamId, conversationId),
+        requireSendableTeam: teamId => this.requireSendableTeam(teamId),
+        setMemberRuntimeState: (teamId, slotId, state) => this.setMemberRuntimeState(teamId, slotId, state),
+      },
+    }
+  }
+
+  async stopMember(teamId: string, slotId: string, conversationId: string): Promise<void> {
+    await teamTeardown.stopMember(this.teardownDeps(), teamId, slotId, conversationId)
+  }
+
+  async removeMember(teamId: string, slotId: string): Promise<TeamAggregate> {
+    return await teamTeardown.removeMember(this.teardownDeps(), teamId, slotId)
+  }
+
+  async dissolveTeam(teamId: string): Promise<void> {
+    await teamTeardown.dissolveTeam(this.teardownDeps(), teamId)
+  }
+
+  private async stopConversationMembers(conversation: TeamConversation): Promise<void> {
+    await teamTeardown.stopConversationMembers(this.teardownDeps(), conversation)
+  }
   bindSession(sessionId: string, teamId: string): Promise<TeamConversation> {
     return this.operations.run(teamId, async () => {
       const team = this.service.getTeam(teamId)
@@ -420,50 +458,8 @@ export class TeamRuntime {
   }
 
   /** Stop and release every member Agent of one conversation. */
-  private async stopConversationMembers(conversation: TeamConversation): Promise<void> {
-    const sessionIds = Object.values(conversation.memberSessions)
-    const ownedEntries = sessionIds
-      .map(sessionId => [sessionId, this.members.agentOf(sessionId)] as const)
-      .filter((entry): entry is readonly [string, OwnedAgent] => entry[1] !== undefined)
-    for (const [, entry] of ownedEntries) entry.handle.agent.cancel({ kind: 'user' }, { keepInbox: false })
-    await Promise.all(ownedEntries.map(([, entry]) => entry.handle.agent.whenIdle()))
-    for (const [sessionId, entry] of ownedEntries) {
-      try {
-        await this.ctx.sessions.flush(entry.handle.agent.session)
-      } catch (error) {
-        this.ctx.logger.warn(`agent-team: session flush failed for ${sessionId}`, error)
-      }
-      this.members.detach(sessionId)
-      this.interactions.forget(sessionId)
-      await entry.handle.dispose()
-    }
-  }
 
 
-  async stopMember(teamId: string, slotId: string, conversationId: string): Promise<void> {
-    const team = this.requireSendableTeam(teamId)
-    const member = team.members[slotId]
-    if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-    const conversation = this.requireConversation(teamId, conversationId)
-    const agent = this.requireAgentIn(conversation, slotId)
-    agent.cancel({ kind: 'user' })
-    await agent.whenIdle()
-    await this.setMemberRuntimeState(teamId, slotId, 'idle')
-    const current = this.service.getTeam(teamId)
-    const currentMember = current.members[slotId]
-    if (currentMember !== undefined) {
-      this.service.publishConversation(
-        teamId,
-        current.revision,
-        this.projectMemberConversation(
-          current,
-          currentMember,
-          conversation,
-          agent.session.snapshotEvents(),
-        ),
-      )
-    }
-  }
 
   async respondToInteraction(
     teamId: string,
@@ -574,163 +570,7 @@ export class TeamRuntime {
   }
 
 
-  removeMember(teamId: string, slotId: string): Promise<TeamAggregate> {
-    return this.operations.run(teamId, async () => {
-      const team = this.service.getTeam(teamId)
-      if (team.state !== 'active' && team.state !== 'error') {
-        throw new AgentTeamError('TEAM_NOT_ACTIVE', `Cannot remove a runtime member while team is '${team.state}'`)
-      }
-      const member = team.members[slotId]
-      if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-      if (slotId === team.leaderSlotId) {
-        throw new AgentTeamError('MEMBER_IS_LEADER', 'Choose a successor before removing the current leader')
-      }
-      const openTasks = Object.values(team.tasks).filter(task =>
-        taskAssigneeIds(task).includes(slotId) && !['completed', 'failed', 'cancelled'].includes(task.status))
-      if (openTasks.length > 0) {
-        throw new AgentTeamError('MEMBER_BUSY', 'Resolve this member’s open tasks before removal', {
-          taskIds: openTasks.map(task => task.id),
-        })
-      }
 
-      // A member owns one Session per conversation, so removal must tear down
-      // every Session that member ever materialized.
-      const sessionIds = [...new Set(
-        this.service.listConversations(teamId).items
-          .map(conversation => conversation.memberSessions[slotId])
-          .filter((value): value is string => value !== undefined),
-      )]
-      for (const sessionId of sessionIds) {
-        if (this.members.agentOf(sessionId) === undefined && this.ctx.agents.get(SessionId(sessionId)) !== undefined) {
-          throw new AgentTeamError(
-            'AGENT_HANDLE_OWNERSHIP_CONFLICT',
-            `Session '${sessionId}' is live without this plugin's AgentHandle`,
-          )
-        }
-      }
-      for (const sessionId of sessionIds) {
-        const owned = this.members.agentOf(sessionId)
-        if (owned === undefined) continue
-        owned.handle.agent.cancel({ kind: 'user' }, { keepInbox: false })
-        await owned.handle.agent.whenIdle()
-        await this.ctx.sessions.flush(owned.handle.agent.session)
-        this.members.detach(sessionId)
-        this.interactions.forget(sessionId)
-        await owned.handle.dispose()
-      }
-      await this.service.forgetMemberSessions(teamId, slotId)
-      const removedAt = new Date().toISOString()
-      const target = this.service.listConversations(teamId).items[0]
-      const notice = target === undefined
-        ? undefined
-        : systemTeamMessage({
-          team,
-          conversationId: target.id,
-          recipientSlotId: team.leaderSlotId,
-          content: `团队成员「${member.displayName}」（成员 ID：${member.id}）已被移出团队，其 Session 已停止并归档。后续任务请重新分配给其他成员。`,
-        })
-      await this.service.updateRuntimeTeam(
-        teamId,
-        current => {
-          const members = { ...current.members }
-          delete members[slotId]
-          return {
-            ...current,
-            members,
-            retiredSessions: {
-              ...current.retiredSessions,
-              ...Object.fromEntries(sessionIds.map(sessionId => [
-                sessionId,
-                {
-                  formerSlotId: member.id,
-                  sessionId,
-                  displayName: member.displayName,
-                  removedAt,
-                },
-              ])),
-            },
-            ...(notice === undefined ? {} : { outbox: { ...current.outbox, [notice.id]: notice } }),
-          }
-        },
-        'team.member_removed',
-        `Member ${member.displayName} removed; Session history retained`,
-      )
-      if (notice !== undefined) await this.messages.deliver(teamId, notice.id)
-      return this.service.getTeam(teamId)
-    })
-  }
-
-  dissolveTeam(teamId: string): Promise<void> {
-    return this.operations.run(teamId, async () => {
-      let team = this.service.getTeam(teamId)
-      const conversations = this.service.listConversations(teamId).items
-      const sessionIds = [...new Set([
-        ...conversations.flatMap(conversation => Object.values(conversation.memberSessions)),
-        ...Object.keys(team.retiredSessions),
-      ])]
-      for (const conversation of conversations) {
-        if (conversation.sessionId !== undefined) this.detachLeader(conversation.sessionId)
-      }
-      for (const sessionId of sessionIds) {
-        if (this.members.agentOf(sessionId) === undefined && this.ctx.agents.get(SessionId(sessionId)) !== undefined) {
-          throw new AgentTeamError(
-            'AGENT_HANDLE_OWNERSHIP_CONFLICT',
-            `Session '${sessionId}' is live without this plugin's AgentHandle`,
-          )
-        }
-      }
-
-      if (team.state !== 'deleting') {
-        team = await this.service.updateRuntimeTeam(
-          teamId,
-          current => ({ ...current, state: 'deleting' }),
-          'team.deleting',
-          `Team ${team.name} dissolution started`,
-        )
-      }
-
-      try {
-        const ownedEntries = this.members.agentsInTeam(teamId)
-        for (const [, entry] of ownedEntries) {
-          entry.handle.agent.cancel({ kind: 'user' }, { keepInbox: false })
-        }
-        await Promise.all(ownedEntries.map(([, entry]) => entry.handle.agent.whenIdle()))
-
-        for (const [sessionId, entry] of ownedEntries) {
-          try {
-            await this.ctx.sessions.flush(entry.handle.agent.session)
-          } catch (error) {
-            this.ctx.logger.warn(`agent-team: final session flush failed during dissolution for ${sessionId}`, error)
-          }
-          await entry.handle.dispose()
-          this.members.detach(sessionId)
-          this.interactions.forget(sessionId)
-        }
-
-        await this.service.deleteTeamRecords(teamId)
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        try {
-          await this.service.updateRuntimeTeam(
-            teamId,
-            current => ({ ...current, state: 'delete_blocked' }),
-            'team.delete_blocked',
-            message,
-          )
-        } catch (updateError) {
-          this.ctx.logger.warn(`agent-team: failed to persist blocked dissolution for ${teamId}`, updateError)
-        }
-        throw error instanceof AgentTeamError
-          ? error
-          : new AgentTeamError(
-            'TEAM_DELETE_FAILED',
-            `团队“${team.name}”解散失败：${message}`,
-            { teamId, cause: message },
-            { cause: error },
-          )
-      }
-    })
-  }
 
 
   /**

@@ -15,6 +15,7 @@ import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Config } from '../config.js'
 import { AgentTeamError } from '../domain/errors.js'
 import { LiveStreamBuffer } from './live-stream-buffer.js'
+import { decideLeaderAnswer } from './leader-answer.js'
 import { memberAgentSetup } from './member-context.js'
 import { installCompositionSections, teamComposition } from './team-composition.js'
 import { MemberRegistry } from './member-registry.js'
@@ -1692,22 +1693,15 @@ export class TeamRuntime {
           if (pending === undefined) {
             throw new AgentTeamError('INTERACTION_NOT_FOUND', '该交互请求已结束或不存在')
           }
-          const leaderMode = this.leaderSandboxMode(team.id, conversation.id)
-          if (pending.kind === 'approval'
-            && input.decision === 'allow'
-            && !withinLeaderAuthority(leaderMode, pending.requestedMode)) {
-            const delegated = this.service.getConversation(team.id, conversation.id).delegateInteractions === true
-            // Only the reader could grant this, and «替我审批» took the reader
-            // out of the loop, so it stays refused rather than opening a card.
-            if (!delegated) this.interactions.markUserOnly(pending.id)
-            throw new AgentTeamError(
-              'INVALID_REQUEST',
-              delegated
-                ? `超出你当前权限（${leaderMode ?? '未知'}）：请求 ${pending.requestedMode ?? '未知'} 不能批准。`
-                  + '本会话开启了「替我审批」，用户不会介入——请改判 deny，或换一个你权限内的方案。'
-                : `超出你当前权限（${leaderMode ?? '未知'}）：请求 ${pending.requestedMode ?? '未知'} 只能由用户批准。`
-                  + '你可以 deny，或在你自己的回复里把理由和影响告诉用户，由它决定。',
-            )
+          const decision = decideLeaderAnswer({
+            pending,
+            ...(input.decision === undefined ? {} : { decision: input.decision }),
+            leaderMode: this.leaderSandboxMode(team.id, conversation.id),
+            delegated: this.service.getConversation(team.id, conversation.id).delegateInteractions === true,
+          })
+          if (decision.userOnly) this.interactions.markUserOnly(pending.id)
+          if (decision.refusal !== undefined) {
+            throw new AgentTeamError('INVALID_REQUEST', decision.refusal)
           }
           const answered = this.interactions.answerAsLeader(input.interactionId, input)
           return { interactionId: input.interactionId, answered }

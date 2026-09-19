@@ -227,6 +227,7 @@ export class TeamRuntime {
     return this.interactions
   }
 
+  // ── The room and its messages ───────────────────────────────────────────
   async getWorkbench(teamId: string, conversationId: string): Promise<TeamWorkbenchView> {
     const team = this.service.getTeam(teamId)
     const conversation = this.requireConversation(teamId, conversationId)
@@ -391,6 +392,7 @@ export class TeamRuntime {
    * other members run as that Agent's subagents. Enabling is what starts the
    * team, so a draft team becomes active here.
    */
+  // ── Team lifecycle ──────────────────────────────────────────────────────
   bindSession(sessionId: string, teamId: string): Promise<TeamConversation> {
     return this.operations.run(teamId, async () => {
       const team = this.service.getTeam(teamId)
@@ -740,6 +742,7 @@ export class TeamRuntime {
     }
   }
 
+  // ── What the view is shown ──────────────────────────────────────────────
   private projectMemberConversation(
     team: TeamAggregate,
     member: TeamMemberSlot,
@@ -802,6 +805,7 @@ export class TeamRuntime {
    * work that happened there stays accounted for. A member that never had a
    * Session here is simply brought online — there is nothing to forget.
    */
+  // ── Bringing members online ─────────────────────────────────────────────
   freshMemberContext(teamId: string, conversationId: string, slotId: string): Promise<void> {
     return this.operations.run(teamId, async () => {
       const team = this.service.getTeam(teamId)
@@ -1614,6 +1618,7 @@ export class TeamRuntime {
   }
 
   /** Install the team composition on a bound Session's own Agent. */
+  // ── The Leader: the Session’s own Agent ─────────────────────────────────
   private attachLeaderForSession(sessionId: string): void {
     const conversation = this.service.findConversationBySession(sessionId)
     if (conversation !== undefined) this.attachLeader(conversation)

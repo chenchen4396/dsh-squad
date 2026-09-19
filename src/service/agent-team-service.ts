@@ -190,11 +190,13 @@ export class AgentTeamService extends Service {
     this.runtime = runtime
   }
 
+  // ── The assistant designer ──────────────────────────────────────────────
   attachAssistantBuilderRuntime(runtime: AssistantBuilderRuntime): void {
     if (this.assistantBuilderRuntime !== undefined) throw new Error('Assistant Builder runtime is already attached')
     this.assistantBuilderRuntime = runtime
   }
 
+  // ── The workspace a conversation runs in ────────────────────────────────
   startWorkspaceTracking(): void {
     this.workspace.startTracking()
   }
@@ -215,6 +217,7 @@ export class AgentTeamService extends Service {
    * a moment later.
    */
   /** The deployment's providers, models and presets, cached behind one read. */
+  // ── The catalog: what this deployment offers ────────────────────────────────
   catalog(): Promise<CatalogSnapshot> {
     return this.catalogCache.get()
   }
@@ -301,6 +304,7 @@ export class AgentTeamService extends Service {
     }
   }
 
+  // ── Imported rule documents ─────────────────────────────────────────────
   listRuleDocuments(): Page<RuleDocument> {
     return listRuleDocuments(this.store)
   }
@@ -362,6 +366,7 @@ export class AgentTeamService extends Service {
    * team still references is rejected, so this always resolves for a member of
    * a stored team.
    */
+  // ── Assistant templates ─────────────────────────────────────────────────
   assistantForMember(member: TeamMemberSlot): AssistantTemplate {
     const assistant = this.store.getAssistant(member.assistantId)
     if (assistant === undefined) {
@@ -384,6 +389,7 @@ export class AgentTeamService extends Service {
    * Write what this instance is configured with into a portable file. Only
    * configuration travels; the running state stays with the machine it ran on.
    */
+  // ── Moving configuration in and out ─────────────────────────────────────
   exportBundle(input: { teamIds?: readonly string[] | undefined } = {}): SquadBundle {
     return exportConfigured(this.store, input)
   }
@@ -616,6 +622,7 @@ export class AgentTeamService extends Service {
     return this.requireAssistantBuilderRuntime().archiveConversation(sessionId)
   }
 
+  // ── Teams and their membership ──────────────────────────────────────────
   getTeam(id: string): TeamAggregate {
     return requireTeam(this.store, id)
   }
@@ -815,6 +822,7 @@ export class AgentTeamService extends Service {
     return this.requireRuntime().sendUserMessage(teamId, content, conversationId, targetSlotId)
   }
 
+  // ── Sessions, conversations and the room ────────────────────────────────
   async getWorkbench(teamId: string, conversationId: string): Promise<TeamWorkbenchView> {
     const view = await this.requireRuntime().getWorkbench(teamId, conversationId)
     const displays = this.conversationDisplays(teamId)

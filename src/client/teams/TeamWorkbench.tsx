@@ -12,6 +12,7 @@ import { callAgentTeam, subscribeAgentTeamConversation } from '../api.js'
 import css from '../AgentTeam.module.css'
 import { orderedMembers } from '../../domain/team-selectors.js'
 import { MemberColumn } from './MemberColumn.js'
+import { MemberTabs } from './MemberTabs.js'
 import { TaskFlowChart } from './TaskFlowChart.js'
 import { AddTeamMemberDialog, CloneTeamDialog, RemoveTeamMemberDialog } from './TeamDialogs.js'
 import { CrownIcon } from '../icons/CrownIcon.js'
@@ -291,44 +292,16 @@ export function TeamWorkbench({
           </button>
         </span>
         <span className={css.memberTabsDivider} aria-hidden="true" />
-        {members.map(member => {
-          const conversation = conversations.get(member.id)
-          const selected = pickedSlotId === member.id
-          return (
-            <span key={member.id} className={css.memberTabWrap}>
-              <button
-                type="button"
-                className={`${css.memberTab} ${member.role === 'leader' ? '' : css.memberTabWithActions} ${selected ? css.memberTabActive : ''}`}
-                title={selected ? `显示全部成员` : `只看 ${member.displayName}`}
-                onClick={() => { pickMember(member.id) }}
-                aria-pressed={selected}
-              >
-                <span className={css.memberAvatar}>{member.displayName.slice(0, 1).toUpperCase()}</span>
-                <span className={css.memberTabName}>{member.displayName}</span>
-                {member.role === 'leader' && <CrownIcon size={15} className={css.leaderCrown} title="Leader" />}
-                {(conversation?.pendingInteractions.length ?? 0) > 0
-                  && <span className={css.memberTabAlert} title="该成员在等你的回答或审批">!</span>}
-                <StateDot state={runtimeStateDot(conversation?.status ?? 'idle')} size={8} />
-              </button>
-              {member.role !== 'leader' && (
-                <span className={css.memberTabActions}>
-                  <button
-                    type="button"
-                    className={css.memberTabRemoveAction}
-                    title={`移出成员 ${member.displayName}`}
-                    aria-label={`移出成员 ${member.displayName}`}
-                    onClick={() => {
-                      setMemberActionError(undefined)
-                      setMemberToRemove(member)
-                    }}
-                  >
-                    <IconCloseOutline16 size={12} />
-                  </button>
-                </span>
-              )}
-            </span>
-          )
-        })}
+        <MemberTabs
+          members={members}
+          conversations={conversations}
+          selectedSlotId={pickedSlotId}
+          onPick={slotId => { pickMember(slotId) }}
+          onRemove={member => {
+            setMemberActionError(undefined)
+            setMemberToRemove(member)
+          }}
+        />
         <span className={css.manageButtonWrap}>
           {!workspaceVisible && (
             <Button

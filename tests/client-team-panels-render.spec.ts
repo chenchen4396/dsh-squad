@@ -2,6 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { AssistantView, CatalogView, TeamView } from '../src/transport/contracts.js'
+import { MemberTabs } from '../src/client/teams/MemberTabs.js'
 import { TeamDetail } from '../src/client/teams/TeamDetail.js'
 import { TeamForm } from '../src/client/teams/TeamForm.js'
 import { TeamList } from '../src/client/teams/TeamList.js'
@@ -246,5 +247,51 @@ describe('the remove-member confirmation', () => {
       onConfirm: () => {},
     }))
     expect(html.replace(/<[^>]+>/g, ' ')).toContain('移出中')
+  })
+})
+
+describe('the member tabs', () => {
+  const member = (id: string, name: string, role: 'leader' | 'member') => ({
+    id, displayName: name, role, assistantId: 'a1', permissionPresetId: 'read-only',
+    ruleAllowlist: [], desiredState: 'online', lastRuntimeState: 'offline', joinedAt: '',
+  })
+  const team = {
+    members: {
+      'slot-leader': member('slot-leader', 'LD', 'leader'),
+      'slot-se': member('slot-se', 'SE', 'member'),
+    },
+  } as unknown as TeamView
+
+  const render = (props: Record<string, unknown> = {}): string =>
+    renderToStaticMarkup(createElement(MemberTabs, {
+      members: Object.values(team.members),
+      conversations: new Map(),
+      selectedSlotId: undefined,
+      onPick: () => {},
+      onRemove: () => {},
+      ...props,
+    } as never))
+
+  it('marks the Leader and offers no remove action for it', () => {
+    const html = render()
+    expect(html).toContain('Leader')
+    // The team cannot do without its Leader slot, so it is not removable.
+    expect([...html.matchAll(/aria-label="移出成员/g)]).toHaveLength(1)
+    expect(html).toContain('移出成员 SE')
+  })
+
+  it('badges a member who is waiting on the reader', () => {
+    const conversations = new Map([['slot-se', {
+      slotId: 'slot-se', status: 'idle', pendingInteractions: [{ id: 'i1' }],
+    }]])
+    const html = render({ conversations })
+    expect(html).toContain('该成员在等你的回答或审批')
+  })
+
+  it('marks the member being looked at alone', () => {
+    const html = render({ selectedSlotId: 'slot-se' })
+    expect([...html.matchAll(/memberTabActive/g)]).toHaveLength(1)
+    // Clicking the selected tab goes back to showing everybody.
+    expect(html).toContain('显示全部成员')
   })
 })

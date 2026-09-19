@@ -21,6 +21,7 @@ import { HandoffRelay } from './handoff-relay.js'
 import * as leaderAttachment from './leader-attachment.js'
 import { mapConcurrent } from './member-activation.js'
 import * as memberActivation from './member-activation.js'
+import * as teamRoom from './team-room.js'
 import { subscribeRuntimeEvents } from './runtime-events.js'
 import { installCompositionSections, teamComposition } from './team-composition.js'
 import { MemberRegistry } from './member-registry.js'
@@ -191,170 +192,121 @@ export class TeamRuntime {
   }
 
   // ── The room and its messages ───────────────────────────────────────────
+  // These belong to `team-room`; the runtime hands each call on, and supplies
+  // its own lookups through `host`.
+
   async getWorkbench(teamId: string, conversationId: string): Promise<TeamWorkbenchView> {
-    const team = this.service.getTeam(teamId)
-    const conversation = this.requireConversation(teamId, conversationId)
-    // Opening the 团队 view is what brings the members online, exactly like
-    // opening the old workbench did — but only when one is actually missing.
-    // Re-reading a team that is already online is the common case, and
-    // materializing an Agent is the expensive one; paying for activation on
-    // every read is what made the view feel like it reloads forever.
-    const offline = orderedMembers(team)
-      .some(member => this.resolveAgentIn(conversation, member.id) === undefined)
-    if (offline) {
-      // A Session the Harness has not materialized yet keeps the view readable
-      // instead of failing the whole read.
-      await this.operations.run(teamId, () => this.ensureConversationOnline(teamId, conversation.id))
-        .catch(error => {
-          this.ctx.logger.warn(
-            `agent-team: members of conversation '${conversation.id}' are not online yet`,
-            error,
-          )
-        })
-    }
-    const stored = await this.storedSessionIds()
-    const conversations = await Promise.all(orderedMembers(team).map(async member => {
-      const events = await this.memberEvents(conversation, member.id, stored)
-      return this.projectMemberConversation(team, member, conversation, events)
-    }))
-    return {
-      schemaVersion: 1,
-      teamId: team.id,
-      revision: team.revision,
-      conversation,
-      conversations,
-    }
+    return await teamRoom.getWorkbench(this.roomDeps(), teamId, conversationId)
   }
 
-  /** Resolve one bound conversation, failing loudly when it does not exist. */
-  private requireConversation(teamId: string, conversationId: string): TeamConversation {
-    return this.service.getConversation(teamId, conversationId)
+  async getRoom(
+    teamId: string,
+    conversationId: string,
+    beforeTime?: number,
+  ): Promise<RoomView> {
+    return await teamRoom.getRoom(this.roomDeps(), teamId, conversationId, beforeTime)
   }
 
-  /**
-   * One member's durable events inside a conversation. The Leader runs on the
-   * Session Agent itself, so its events are the Session's own log — the same
-   * conversation the 对话 view shows.
-   */
-  private async memberEvents(
-    conversation: TeamConversation,
-    slotId: string,
-    stored?: Set<string>,
-  ): Promise<readonly SessionEvent[]> {
-    const sessionId = this.memberSessionId(conversation, slotId)
-    if (sessionId === undefined) return []
-    const leader = this.leaderAgent(conversation)
-    if (leader !== undefined && String(leader.id) === sessionId) {
-      return leader.session.snapshotEvents()
-    }
-    const owned = this.members.agentOf(sessionId)
-    if (owned !== undefined) return owned.handle.agent.session.snapshotEvents()
-    const materialized = stored ?? await this.storedSessionIds()
-    if (!materialized.has(sessionId)) return []
-    try {
-      return await readStoredEvents(this.ctx, sessionId)
-    } catch {
-      return []
-    }
-  }
-
-  /**
-   * The Session behind one member slot: the Leader is the bound Harness
-   * Session, every other member is its subagent.
-   */
-  private memberSessionId(conversation: TeamConversation, slotId: string): string | undefined {
-    const team = this.service.getTeam(conversation.teamId)
-    if (slotId === team.leaderSlotId) return conversation.sessionId
-    return conversation.memberSessions[slotId]
-  }
-
-  /** Read a durable log for a member that is not currently online. */
-  private async storedSessionIds(): Promise<Set<string>> {
-    const snapshots = await this.ctx.sessionPersistence.list()
-    return new Set(snapshots.map(snapshot => String(snapshot.header.id)))
-  }
-
-  /**
-   * A member's live state. A Session that is online reports its Agent status;
-   * an offline one reports the last state this team recorded for the member.
-   */
-  private memberStatus(
-    sessionId: string | undefined,
-    lastRuntimeState: TeamMemberSlot['lastRuntimeState'],
-  ): MemberConversationView['status'] {
-    if (sessionId === undefined) return 'offline'
-    const owned = this.members.agentOf(sessionId)
-    if (owned !== undefined) return owned.handle.agent.status
-    const leader = this.ctx.agents.get(SessionId(sessionId))
-    if (leader !== undefined) return leader.status
-    return lastRuntimeState
-  }
-
-  /** Build the shared room timeline for one bound Session. */
-  async getRoom(teamId: string, conversationId: string, beforeTime?: number): Promise<RoomView> {
-    const team = this.service.getTeam(teamId)
-    const conversation = this.requireConversation(teamId, conversationId)
-    const stored = await this.storedSessionIds()
-    const messages = this.service.listMessages(teamId).items
-      .filter(message => message.conversationId === conversation.id)
-    const sources = await Promise.all(Object.values(team.members).map(async member => ({
-      member,
-      events: await this.memberEvents(conversation, member.id, stored),
-    })))
-    const projected = projectRoom(
-      team,
-      sources,
-      messages,
-      beforeTime === undefined
-        ? { conversationId: conversation.id }
-        : { beforeTime, limit: CONVERSATION_PAGE_SIZE, conversationId: conversation.id },
-    )
-    return {
-      schemaVersion: 1,
-      teamId,
-      conversation,
-      participants: orderedMembers(team).map(member => ({
-        slotId: member.id,
-        displayName: member.displayName,
-        role: member.role,
-        status: this.memberStatus(
-          this.memberSessionId(conversation, member.id),
-          member.lastRuntimeState,
-        ),
-      })),
-      messages: projected.messages,
-      throughSeq: projected.throughSeq,
-      hasMore: projected.hasMore,
-      ...(projected.oldestTime === undefined ? {} : { oldestTime: projected.oldestTime }),
-    }
-  }
-
-  /**
-   * One member's page of nodes immediately before `beforeSeq`.
-   *
-   * The view keeps the newer window it already shows and prepends this page,
-   * the way the Harness pages a Session's history.
-   */
   async getOlderMemberConversation(
     teamId: string,
     conversationId: string,
     slotId: string,
     beforeSeq: number,
   ): Promise<MemberConversationView> {
-    const team = this.service.getTeam(teamId)
-    const member = team.members[slotId]
-    if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-    const conversation = this.requireConversation(teamId, conversationId)
-    const stored = await this.storedSessionIds()
-    const events = await this.memberEvents(conversation, member.id, stored)
-    return this.projectMemberConversation(team, member, conversation, events, beforeSeq)
+    return await teamRoom.getOlderMemberConversation(
+      this.roomDeps(), teamId, conversationId, slotId, beforeSeq,
+    )
   }
 
-  /**
-   * Enable a team in one Harness Session: its Agent becomes the Leader and the
-   * other members run as that Agent's subagents. Enabling is what starts the
-   * team, so a draft team becomes active here.
-   */
+  async sendRoomMessage(
+    teamId: string,
+    rawContent: string,
+    conversationId: string,
+    mentions: readonly string[] = [],
+  ): Promise<TeamMessage> {
+    return await teamRoom.sendRoomMessage(this.roomDeps(), teamId, rawContent, conversationId, mentions)
+  }
+
+  async sendUserMessage(
+    teamId: string,
+    rawContent: string,
+    conversationId: string,
+    targetSlotId?: string,
+  ): Promise<TeamMessage> {
+    return await teamRoom.sendUserMessage(
+      this.roomDeps(), teamId, rawContent, conversationId, targetSlotId,
+    )
+  }
+
+  private observeUserMessage(sessionId: string, event: SessionEvent): void {
+    teamRoom.observeUserMessage(this.roomDeps(), sessionId, event)
+  }
+
+  private publishOwnedConversation(sessionId: string): void {
+    teamRoom.publishOwnedConversation(this.roomDeps(), sessionId)
+  }
+
+  private projectMemberConversation(
+    team: TeamAggregate,
+    member: TeamMemberSlot,
+    conversation: TeamConversation,
+    events: readonly SessionEvent[],
+    beforeSeq?: number,
+  ): MemberConversationView {
+    return teamRoom.projectMemberConversation(
+      this.roomDeps(), team, member, conversation, events, beforeSeq,
+    )
+  }
+
+  private memberSessionId(conversation: TeamConversation, slotId: string): string | undefined {
+    return teamRoom.memberSessionId(this.roomDeps(), conversation, slotId)
+  }
+
+  private async storedSessionIds(): Promise<Set<string>> {
+    return await teamRoom.storedSessionIds(this.roomDeps())
+  }
+
+  private async memberEvents(
+    conversation: TeamConversation,
+    slotId: string,
+    stored?: Set<string>,
+  ): Promise<readonly SessionEvent[]> {
+    return await teamRoom.memberEvents(this.roomDeps(), conversation, slotId, stored)
+  }
+
+  private memberStatus(
+    sessionId: string | undefined,
+    lastRuntimeState: TeamMemberSlot['lastRuntimeState'],
+  ): MemberConversationView['status'] {
+    return teamRoom.memberStatus(this.roomDeps(), sessionId, lastRuntimeState)
+  }
+
+  /** One conversation, looked up by the ids the caller already has. */
+  private requireConversation(teamId: string, conversationId: string): TeamConversation {
+    return this.service.getConversation(teamId, conversationId)
+  }
+
+  /** What `team-room` needs from this runtime, gathered in one place. */
+  private roomDeps(): teamRoom.RoomDeps {
+    return {
+      ctx: this.ctx,
+      service: this.service,
+      members: this.members,
+      interactions: this.interactions,
+      liveStreams: this.liveStreams,
+      operations: this.operations,
+      host: {
+        requireConversation: (teamId, conversationId) => this.requireConversation(teamId, conversationId),
+        resolveAgentIn: (conversation, slotId) => this.resolveAgentIn(conversation, slotId),
+        requireAgentIn: (conversation, slotId) => this.requireAgentIn(conversation, slotId),
+        ensureConversationOnline: (teamId, conversationId) =>
+          this.ensureConversationOnline(teamId, conversationId),
+        requireSendableTeam: teamId => this.requireSendableTeam(teamId),
+        leaderAgent: conversation => this.leaderAgent(conversation),
+      },
+    }
+  }
+
   // ── Team lifecycle ──────────────────────────────────────────────────────
   bindSession(sessionId: string, teamId: string): Promise<TeamConversation> {
     return this.operations.run(teamId, async () => {
@@ -429,61 +381,6 @@ export class TeamRuntime {
     })
   }
 
-  /**
-   * Record one message the user typed into the Harness composer as a room
-   * message, and hand a mentioned member the message directly.
-   *
-   * The room keeps no composer of its own, so without this the discussion
-   * would read one-sided: the Session's own transcript holds the user's line,
-   * while the room merges the members' turns. A message carrying `@name`
-   * addresses that member, so the plugin delivers it instead of waiting for
-   * the Leader to relay it — the Leader is told not to dispatch it twice.
-   */
-  private observeUserMessage(sessionId: string, event: SessionEvent): void {
-    if (event.type !== 'user/message') return
-    const conversation = this.service.findConversationBySession(sessionId)
-    if (conversation === undefined) return
-    // Team relays carry plugin provenance and member Sessions are not bound at
-    // all, so only what the user typed reaches here.
-    if (event.data.source.kind !== 'user') return
-    const text = textOfContent(event.data.content).trim()
-    if (text.length === 0) return
-    const id = String(event.data.id)
-    // A message the room composer already recorded keeps its record.
-    if (this.service.listMessages(conversation.teamId).items.some(message => message.id === id)) return
-    const team = this.service.getTeam(conversation.teamId)
-    // A message naming members wakes exactly those members. One that names
-    // nobody belongs to the Leader: it owns this Session's turns, and it is the
-    // reader's own Agent. Talking to one member privately means opening that
-    // member's Session, whose composer the Leader never sees.
-    const targets = mentionedSlotIds(team, text)
-    const record = teamMessage({
-      id,
-      teamId: conversation.teamId,
-      conversationId: conversation.id,
-      ...(targets.length === 0 ? {} : { mentions: targets }),
-      sender: { kind: 'user', id: 'local-user' },
-      recipient: { kind: 'broadcast' },
-      type: 'instruction',
-      content: text,
-      idempotencyKey: id,
-    })
-    void this.operations.run(conversation.teamId, async () => {
-      await this.service.putRuntimeMessage({ ...record, deliveryState: 'delivered' })
-      if (targets.length === 0) return
-      await this.ensureConversationOnline(conversation.teamId, conversation.id)
-      for (const slotId of targets) {
-        if (this.service.getTeam(conversation.teamId).members[slotId] === undefined) continue
-        // The Leader is this Session's own Agent: the message the user typed is
-        // already in its log and already drives its turn, so relaying it back
-        // would hand the Leader the same message twice.
-        if (slotId === team.leaderSlotId) continue
-        this.resolveAgentIn(conversation, slotId)?.followup(roomRelayMessage(text))
-      }
-    }).catch(error => {
-      this.ctx.logger.warn('agent-team: failed to relay a mentioned room message', error)
-    })
-  }
 
   /** Disable the team enabled in one Harness Session and stop its members. */
   unbindSession(sessionId: string): Promise<void> {
@@ -542,57 +439,6 @@ export class TeamRuntime {
     }
   }
 
-  /**
-   * Post a user message into the active room. Mentioned members are woken with
-   * the message; with no mention the leader is addressed, matching direct chat.
-   * A member's reply needs no special tool — its Session output is projected
-   * into the room automatically.
-   */
-  async sendRoomMessage(
-    teamId: string,
-    rawContent: string,
-    conversationId: string,
-    mentions: readonly string[] = [],
-  ): Promise<TeamMessage> {
-    const team = this.requireSendableTeam(teamId)
-    const content = requireContent(rawContent)
-    const conversation = this.requireConversation(teamId, conversationId)
-    const targets = mentions.length > 0 ? [...new Set(mentions)] : [team.leaderSlotId]
-    for (const slotId of targets) {
-      if (team.members[slotId] === undefined) {
-        throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-      }
-    }
-    await this.operations.run(teamId, () => this.ensureConversationOnline(teamId, conversation.id))
-    const message = createUserMessage({
-      content: [{ type: 'text', text: content }],
-      source: { kind: 'user' },
-    })
-    const record = teamMessage({
-      id: String(message.id),
-      teamId,
-      conversationId: conversation.id,
-      mentions: targets,
-      sender: { kind: 'user', id: 'local-user' },
-      recipient: { kind: 'broadcast' },
-      type: 'instruction',
-      content,
-      idempotencyKey: String(message.id),
-    })
-    await this.service.putRuntimeMessage(record)
-    try {
-      for (const slotId of targets) {
-        if (team.members[slotId] === undefined) continue
-        this.requireAgentIn(conversation, slotId).followup(roomRelayMessage(content))
-      }
-      const delivered = { ...record, deliveryState: 'delivered' as const }
-      await this.service.putRuntimeMessage(delivered)
-      return delivered
-    } catch (error) {
-      await this.service.putRuntimeMessage({ ...record, deliveryState: 'failed' })
-      throw error
-    }
-  }
 
   async stopMember(teamId: string, slotId: string, conversationId: string): Promise<void> {
     const team = this.requireSendableTeam(teamId)
@@ -672,55 +518,6 @@ export class TeamRuntime {
 
 
   // ── What the view is shown ──────────────────────────────────────────────
-  private projectMemberConversation(
-    team: TeamAggregate,
-    member: TeamMemberSlot,
-    conversation: TeamConversation,
-    events: readonly SessionEvent[],
-    /**
-     * Show only this member's nodes older than the given seq. The view opens on
-     * its newest page and pages backwards, exactly like a Harness Session.
-     */
-    beforeSeq?: number,
-  ): MemberConversationView {
-    const sessionId = this.memberSessionId(conversation, member.id)
-    const status = this.memberStatus(sessionId, member.lastRuntimeState)
-    const contextUsage = projectContextUsage(events)
-    const visible = beforeSeq === undefined
-      ? events
-      : events.filter(event => event.seq < beforeSeq)
-    const projected = projectConversation(visible, CONVERSATION_PAGE_SIZE, {
-      team,
-      messages: this.service.listMessages(team.id).items
-        .filter(message => message.conversationId === conversation.id),
-      // The Leader's column is this Session's own log: the relay copies an
-      // earlier bug appended there read as the user's own messages.
-      ...(member.id === team.leaderSlotId ? { hideRelayEchoes: true } : {}),
-    })
-    const live = sessionId === undefined ? undefined : this.liveStreams.nonEmpty(sessionId)
-    return {
-      slotId: member.id,
-      conversationId: conversation.id,
-      ...(sessionId === undefined ? {} : { sessionId }),
-      status,
-      pendingInteractions: sessionId === undefined ? [] : this.interactions.list(sessionId),
-      ...(live === undefined
-        ? projected
-        : {
-            throughSeq: projected.throughSeq,
-            nodes: [...projected.nodes, {
-              id: `stream:${sessionId ?? member.id}`,
-              kind: 'assistant' as const,
-              seq: projected.throughSeq + 1,
-              time: Date.now(),
-              text: live.text,
-              ...(live.reasoning.length === 0 ? {} : { reasoning: live.reasoning }),
-              streaming: true,
-            }],
-          }),
-      ...(contextUsage === undefined ? {} : { contextUsage }),
-    }
-  }
 
   startTeam(teamId: string): Promise<TeamAggregate> {
     return this.operations.run(teamId, () => this.startTeamUnlocked(teamId))
@@ -935,50 +732,6 @@ export class TeamRuntime {
     })
   }
 
-  async sendUserMessage(
-    teamId: string,
-    rawContent: string,
-    conversationId: string,
-    targetSlotId?: string,
-  ): Promise<TeamMessage> {
-    const team = this.requireSendableTeam(teamId)
-    const slotId = targetSlotId ?? team.leaderSlotId
-    const target = team.members[slotId]
-    if (target === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-    if (slotId !== team.leaderSlotId && !team.directMemberChat) {
-      throw new AgentTeamError('INVALID_REQUEST', 'Direct member chat is disabled for this team')
-    }
-    const content = requireContent(rawContent)
-    const conversation = this.requireConversation(teamId, conversationId)
-    await this.operations.run(teamId, () => this.ensureConversationOnline(teamId, conversation.id))
-    const agent = this.requireAgentIn(conversation, slotId)
-    const message = createUserMessage({
-      content: [{ type: 'text', text: content }],
-      source: { kind: 'user' },
-    })
-    const record = teamMessage({
-      id: String(message.id),
-      teamId,
-      conversationId: conversation.id,
-      sender: { kind: 'user', id: 'local-user' },
-      recipient: slotId === team.leaderSlotId
-        ? { kind: 'leader', slotId }
-        : { kind: 'member', slotId },
-      type: 'instruction',
-      content,
-      idempotencyKey: String(message.id),
-    })
-    await this.service.putRuntimeMessage(record)
-    try {
-      agent.followup(message)
-      const delivered = { ...record, deliveryState: 'delivered' as const }
-      await this.service.putRuntimeMessage(delivered)
-      return delivered
-    } catch (error) {
-      await this.service.putRuntimeMessage({ ...record, deliveryState: 'failed' })
-      throw error
-    }
-  }
 
   /**
    * Startup recovery: drop records that predate the binding model, then make
@@ -1096,47 +849,6 @@ export class TeamRuntime {
    * for good; `reason` goes to the Host log so the cause stays diagnosable.
    */
 
-  private publishOwnedConversation(sessionId: string): void {
-    try {
-      const owned = this.members.agentOf(sessionId)
-      if (owned !== undefined) {
-        const team = this.service.getTeam(owned.teamId)
-        const member = team.members[owned.slotId]
-        if (member === undefined) return
-        this.service.publishConversation(
-          team.id,
-          team.revision,
-          this.projectMemberConversation(
-            team,
-            member,
-            this.service.getConversation(owned.teamId, owned.conversationId),
-            owned.handle.agent.session.snapshotEvents(),
-          ),
-        )
-        return
-      }
-      // The bound Session's own Agent is the Leader, so its activity is what the
-      // 团队 view shows for that member column.
-      const leader = this.members.leaderOf(sessionId)
-      if (leader === undefined) return
-      const team = this.service.getTeam(leader.teamId)
-      const member = team.members[leader.slotId]
-      const agent = this.ctx.agents.get(SessionId(sessionId))
-      if (member === undefined || agent === undefined) return
-      this.service.publishConversation(
-        team.id,
-        team.revision,
-        this.projectMemberConversation(
-          team,
-          member,
-          this.service.getConversation(leader.teamId, leader.conversationId),
-          agent.session.snapshotEvents(),
-        ),
-      )
-    } catch (error) {
-      this.ctx.logger.warn('agent-team: failed to publish interaction update', error)
-    }
-  }
 
   /**
    * Starting a team only validates it. A team has no Sessions of its own any
@@ -1340,13 +1052,6 @@ function isLegacyTeam(team: TeamAggregate): boolean {
  * the room tells them apart by matching the text against the reader's own room
  * records — it never decorates this one.
  */
-function roomRelayMessage(content: string): UserMessage {
-  return createUserMessage({
-    content: [{ type: 'text', text: content }],
-    source: { kind: 'plugin', plugin: 'dsh-squad', form: 'relay' },
-  })
-}
-
 function withReasoningEffort(
   member: TeamMemberSlot,
   reasoningEffort: string | undefined,

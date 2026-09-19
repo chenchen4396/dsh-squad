@@ -7,6 +7,14 @@ import type { Config } from '../config.js'
 import type { BundleImportSummary, SquadBundle } from '../domain/bundle.js'
 import { exportConfigured, importInto } from './bundle-service.js'
 import { AgentTeamError } from '../domain/errors.js'
+import {
+  deleteRuleDocument,
+  getRuleDocument,
+  importRuleDocument,
+  listRuleDocuments,
+  ruleDocumentLimit,
+  type RuleDocumentDeps,
+} from './rule-documents.js'
 import { isMcpServerName, mcpServerFromToolName } from '../domain/mcp.js'
 import { isMarkdownRulePath, markdownRuleExtensions } from '../domain/rule-format.js'
 import { taskAssigneeIds, isRoomRelayEcho } from '../domain/team-selectors.js'
@@ -371,111 +379,36 @@ export class AgentTeamService extends Service {
    * verbatim, not individual rules. Which ones an Agent loads is part of that
    * Agent's configuration, so there is no per-team catalog any more.
    */
+
+  /** Imported rule documents; the domain itself lives in its own module. */
+  private ruleDocumentDeps(): RuleDocumentDeps {
+    return {
+      store: this.store,
+      maxRequestBytes: this.config.maxRequestBytes,
+      activity: (kind, entityId, revision, summary) => this.activity(kind, entityId, revision, summary),
+      publish: (entityType, entityId, revision, kind) => { this.publish(entityType, entityId, revision, kind) },
+      refreshAssistantSettings: assistant => { this.runtime?.refreshAssistantSettings(assistant) },
+    }
+  }
+
   listRuleDocuments(): Page<RuleDocument> {
-    const items = this.store.listRuleDocuments()
-    return { items, total: items.length }
+    return listRuleDocuments(this.store)
   }
 
   getRuleDocument(id: string): RuleDocument {
-    const document = this.store.getRuleDocument(id)
-    if (document === undefined) {
-      throw new AgentTeamError('RULE_REFERENCE_INVALID', `Unknown rule document '${id}'`)
-    }
-    return document
+    return getRuleDocument(this.store, id)
   }
 
-  /** Largest single document this deployment accepts, given the request cap. */
   ruleDocumentLimit(): number {
-    // The body carries the whole document plus a small JSON envelope, so the
-    // document itself has to stay clear of `maxRequestBytes`; otherwise the
-    // transport rejects it before the readable error below can be produced.
-    return Math.max(4 * 1024, this.config.maxRequestBytes - 4 * 1024)
+    return ruleDocumentLimit(this.config.maxRequestBytes)
   }
 
-  /**
-   * Import one document file, stored whole and never split into rules.
-   *
-   * Only Markdown is accepted, so a folder import can never pull an unrelated
-   * file into a member's prompt. Re-importing the same `path` updates the
-   * document in place and keeps its id, so refreshing an imported folder never
-   * invalidates the assistants that already selected those documents.
-   */
-  async importRuleDocument(rawPath: string, content: string): Promise<RuleDocument> {
-    const path = normalizeRulePath(rawPath)
-    if (path === undefined) {
-      throw new AgentTeamError(
-        'RULE_REFERENCE_INVALID',
-        `规则路径不合法：${rawPath}`,
-        { path: rawPath },
-      )
-    }
-    if (!isMarkdownRulePath(path)) {
-      throw new AgentTeamError(
-        'RULE_REFERENCE_INVALID',
-        `规则文档只支持 Markdown（${markdownRuleExtensions.join(' / ')}）：${path}`,
-        { path },
-      )
-    }
-    const bytes = Buffer.byteLength(content, 'utf8')
-    const limit = this.ruleDocumentLimit()
-    if (bytes > limit) {
-      throw new AgentTeamError(
-        'RULE_REFERENCE_INVALID',
-        `规则文档「${path}」有 ${Math.round(bytes / 1024)} KB，超过 ${Math.round(limit / 1024)} KB 上限`,
-        { path, bytes, limit },
-      )
-    }
-    const fileName = path.slice(path.lastIndexOf('/') + 1)
-    const existing = this.store.listRuleDocuments().find(document => document.path === path)
-    const document: RuleDocument = {
-      schemaVersion: 1,
-      id: existing?.id ?? randomUUID(),
-      path,
-      title: ruleDocumentTitle(content, fileName),
-      fileName,
-      content,
-      bytes,
-      importedAt: new Date().toISOString(),
-    }
-    await this.store.putRuleDocument(document)
-    await this.activity(
-      'assistant.rule_imported',
-      document.id,
-      1,
-      `Rule document ${document.path} ${existing === undefined ? 'imported' : 'updated'}`,
-    )
-    this.publish('rule-document', document.id, 1, 'assistant.rule_imported')
-    return document
+  importRuleDocument(rawPath: string, content: string): Promise<RuleDocument> {
+    return importRuleDocument(this.ruleDocumentDeps(), rawPath, content)
   }
 
-  /**
-   * Delete a document and drop it from every assistant that selected it, so no
-   * assistant is left pointing at a document that no longer exists.
-   */
-  async deleteRuleDocument(id: string): Promise<void> {
-    const document = this.getRuleDocument(id)
-    const owners = this.store.listAssistants()
-      .filter(assistant => assistant.ruleDocumentAllowlist.includes(id))
-    for (const assistant of owners) {
-      await this.store.updateAssistant(assistant.id, current => ({
-        ...current,
-        ruleDocumentAllowlist: current.ruleDocumentAllowlist.filter(value => value !== id),
-        revision: current.revision + 1,
-        updatedAt: new Date().toISOString(),
-      }))
-    }
-    await this.store.deleteRuleDocument(id)
-    for (const assistant of owners) {
-      const next = this.store.getAssistant(assistant.id)
-      if (next !== undefined) this.runtime?.refreshAssistantSettings(next)
-    }
-    await this.activity(
-      'assistant.rule_deleted',
-      document.id,
-      1,
-      `Rule document ${document.fileName} deleted`,
-    )
-    this.publish('rule-document', document.id, 1, 'assistant.rule_deleted')
+  deleteRuleDocument(id: string): Promise<void> {
+    return deleteRuleDocument(this.ruleDocumentDeps(), id)
   }
 
   async mcpCatalog(agentPresetId: string): Promise<McpCatalogSnapshot> {    try {
@@ -1557,28 +1490,6 @@ function normalizeAssistantInput(
  * Normalize an imported path into `a/b/c.md`, rejecting anything that could
  * escape the document set (`..`) or that is not a usable path.
  */
-function normalizeRulePath(raw: string): string | undefined {
-  const segments = raw
-    .trim()
-    .replace(/\\/g, '/')
-    .split('/')
-    .map(segment => segment.trim())
-    .filter(segment => segment.length > 0 && segment !== '.')
-  if (segments.length === 0 || segments.some(segment => segment === '..')) return undefined
-  const path = segments.join('/')
-  if (path.length > 300) return undefined
-  return /^[\p{L}\p{N}._\- /]+$/u.test(path) ? path : undefined
-}
-
-/**
- * A readable name for an imported document: its first Markdown heading, or the
- * file name when the document has no heading.
- */
-function ruleDocumentTitle(content: string, fileName: string): string {
-  const heading = /^#{1,6}\s+(.+)$/m.exec(content)?.[1]?.trim()
-  return heading !== undefined && heading.length > 0 ? heading.slice(0, 120) : fileName
-}
-
 function unique(values: readonly string[]): string[] {
   return [...new Set(values.map(value => value.trim()).filter(Boolean))]
 }

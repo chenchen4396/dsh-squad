@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import { PAYLOAD_SCHEMAS, parsePayload } from '../src/transport/payload-schemas.js'
+import { dispatchedMethods } from '../src/transport/dispatch/index.js'
 import {
   AGENT_TEAM_METHODS,
   type AgentTeamPayload,
@@ -19,6 +20,13 @@ describe('dsh-squad transport contracts', () => {
     // instead of here.
     const described = Object.keys(PAYLOAD_SCHEMAS)
     expect([...described].sort()).toEqual([...AGENT_TEAM_METHODS].sort())
+  })
+
+  it('serves every declared method from some dispatch table', () => {
+    // The tables are assembled by subject, so a method can be declared and
+    // described while no table claims it. That would answer every call with
+    // "no handler" at run time; it fails here instead.
+    expect([...dispatchedMethods()].sort()).toEqual([...AGENT_TEAM_METHODS].sort())
   })
 
   it('accepts a request that omits the payload for a method that takes none', () => {

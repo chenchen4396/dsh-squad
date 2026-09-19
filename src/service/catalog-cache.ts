@@ -114,8 +114,12 @@ export class CatalogCache {
         this.onChange()
       })
       .catch(error => {
-        // A stale directory beats none: keep serving it and say so quietly.
-        if (this.value === undefined) throw error
+        // This read is fire-and-forget: `get` has already answered with what
+        // is local and nobody awaits this promise. Letting it reject would be
+        // an unhandled rejection — which a deployment running with
+        // `--unhandled-rejections=throw` turns into a dead process — so a
+        // failure is reported here and nothing more. A stale directory still
+        // beats none, and the next read tries again.
         this.ctx.logger.warn('agent-team: catalog refresh failed', error)
       })
       .finally(() => {

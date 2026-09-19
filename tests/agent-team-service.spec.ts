@@ -19,6 +19,7 @@ import type {
 import { AgentTeamService } from '../src/service/agent-team-service.js'
 import type { AgentTeamStore } from '../src/storage/store.js'
 import { LEADER_ANSWER_TIMEOUT_MS } from '../src/runtime/team-interaction-bridge.js'
+import { assertModelAvailable, type ActivationDeps } from '../src/runtime/member-activation.js'
 import { TeamRuntime } from '../src/runtime/team-runtime.js'
 import type { TeamCommandHandler } from '../src/runtime/team-command-handler.js'
 import type { TeamMessageDispatcher } from '../src/runtime/team-message-dispatcher.js'
@@ -346,15 +347,16 @@ describe('AgentTeamService', () => {
 
     // The raw Harness failure is `no adapter registered for provider "opencode-go"`,
     // which names neither the member nor the assistant to fix.
-    await expect(runtimeInternals(runtime).assertModelAvailable(member, 'opencode-go', 'kimi-k3'))
+    const deps = runtimeInternals(runtime).activationDeps()
+    await expect(assertModelAvailable(deps, member, 'opencode-go', 'kimi-k3'))
       .rejects.toMatchObject({ code: 'MODEL_REFERENCE_INVALID' })
-    await expect(runtimeInternals(runtime).assertModelAvailable(member, 'opencode-go', 'kimi-k3'))
+    await expect(assertModelAvailable(deps, member, 'opencode-go', 'kimi-k3'))
       .rejects.toThrow(/opencode-go/)
-    await expect(runtimeInternals(runtime).assertModelAvailable(member, 'opencode-go', 'kimi-k3'))
+    await expect(assertModelAvailable(deps, member, 'opencode-go', 'kimi-k3'))
       .rejects.toThrow(/openai/)
 
     // A registered provider and resolvable model pass.
-    await expect(runtimeInternals(runtime).assertModelAvailable(member, 'openai', 'codex'))
+    await expect(assertModelAvailable(deps, member, 'openai', 'codex'))
       .resolves.toBeUndefined()
   })
 
@@ -689,16 +691,14 @@ describe('AgentTeamService', () => {
     const runtime = new TeamRuntime(ctx, config, service)
     service.attachRuntime(runtime)
     const leaderAgent = fakeAgent()
-    const ensureMemberOnline = vi.fn(async () => {})
     await ownLeader(agents, service, team.id, leaderAgent)
-    runtimeInternals(runtime).ensureMemberOnline = ensureMemberOnline
 
     const added = await service.addMember(team.id, {
       assistantId: assistant.id,
     }, { expectedRevision: service.getTeam(team.id).revision })
     const member = Object.values(added.members).find(value => value.id !== leader.id)!
 
-    expect(ensureMemberOnline).toHaveBeenCalledOnce()
+    // The member is brought online for real: the leader is told about it.
     expect(leaderAgent.followup).toHaveBeenCalledOnce()
     expect(leaderAgent.followup.mock.calls[0]?.[0]).toMatchObject({
       source: { kind: 'plugin', plugin: 'dsh-squad', form: 'relay' },
@@ -1614,11 +1614,8 @@ interface RuntimeInternals {
   }
   commands: TeamCommandHandler
   messages: TeamMessageDispatcher
-  assertModelAvailable: (
-    member: TeamAggregate['members'][string],
-    provider: string,
-    model: string,
-  ) => Promise<void>
+  /** What bringing a team online needs; the module functions take this. */
+  activationDeps: () => ActivationDeps
   ensureConversationOnline: (teamId: string, conversationId: string) => Promise<void>
   ensureMemberOnline: (...args: unknown[]) => Promise<void>
   stopMember(teamId: string, slotId: string, conversationId: string): Promise<void>

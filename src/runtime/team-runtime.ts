@@ -19,6 +19,8 @@ import { decideLeaderAnswer } from './leader-answer.js'
 import { memberAgentSetup } from './member-context.js'
 import { HandoffRelay } from './handoff-relay.js'
 import * as leaderAttachment from './leader-attachment.js'
+import { mapConcurrent } from './member-activation.js'
+import * as memberActivation from './member-activation.js'
 import { subscribeRuntimeEvents } from './runtime-events.js'
 import { installCompositionSections, teamComposition } from './team-composition.js'
 import { MemberRegistry } from './member-registry.js'
@@ -179,7 +181,7 @@ export class TeamRuntime {
       warn: (message, error) => { ctx.logger.warn(message, error) },
       attachLeaderForSession: sessionId => this.attachLeaderForSession(sessionId),
       observeUserMessage: (sessionId, event) => this.observeUserMessage(sessionId, event),
-      setMemberRuntimeState: (teamId, slotId, status) => this.setMemberRuntimeState(teamId, slotId, status),
+      setMemberRuntimeState: (teamId, slotId, state) => this.setMemberRuntimeState(teamId, slotId, state),
       publishOwnedConversation: sessionId => this.publishOwnedConversation(sessionId),
     })
   }
@@ -668,39 +670,6 @@ export class TeamRuntime {
     }
   }
 
-  /**
-   * Fail with an actionable message before creating an Agent whose model this
-   * deployment cannot route.
-   *
-   * Without this the failure surfaces from the LLM layer as
-   * `no adapter registered for provider "x"`, which names neither the member nor
-   * the assistant to fix.
-   */
-  private async assertModelAvailable(
-    member: TeamMemberSlot,
-    provider: string,
-    model: string,
-  ): Promise<void> {
-    const registered = new Set(this.ctx.llm.listProviders().map(info => info.id))
-    if (!registered.has(provider)) {
-      throw new AgentTeamError(
-        'MODEL_REFERENCE_INVALID',
-        `成员「${member.displayName}」的模型 provider「${provider}」在当前环境中未注册，`
-        + `请在助手库中改用可用的 provider（当前可用：${[...registered].join('、') || '无'}）`,
-        { memberId: member.id, provider, model, registeredProviders: [...registered] },
-      )
-    }
-    try {
-      await this.ctx.llm.resolveModelInfo(provider, model)
-    } catch (error) {
-      throw new AgentTeamError(
-        'MODEL_REFERENCE_INVALID',
-        `成员「${member.displayName}」的模型「${provider}/${model}」无法解析，请检查助手配置`,
-        { memberId: member.id, provider, model },
-        { cause: error },
-      )
-    }
-  }
 
   // ── What the view is shown ──────────────────────────────────────────────
   private projectMemberConversation(
@@ -766,67 +735,47 @@ export class TeamRuntime {
    * Session here is simply brought online — there is nothing to forget.
    */
   // ── Bringing members online ─────────────────────────────────────────────
-  freshMemberContext(teamId: string, conversationId: string, slotId: string): Promise<void> {
-    return this.operations.run(teamId, async () => {
-      const team = this.service.getTeam(teamId)
-      const member = team.members[slotId]
-      if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-      if (slotId === team.leaderSlotId) return
-      let conversation = this.service.getConversation(teamId, conversationId)
-      const previous = conversation.memberSessions[slotId]
-      if (previous !== undefined) {
-        await this.service.forgetMemberSessions(teamId, slotId)
-        conversation = await this.service.assignMemberSessions(teamId, conversationId, {
-          [slotId]: `agent-team:${randomUUID()}`,
-        })
-        const active = this.members.agentOf(previous)
-        if (active !== undefined) {
-          this.members.detach(previous)
-          await active.handle.dispose().catch(() => undefined)
-        }
-      }
-      await this.ensureConversationOnline(teamId, conversation.id)
-    })
+
+  /** What bringing a team online needs from this runtime. */
+  private activationDeps(): memberActivation.ActivationDeps {
+    return {
+      ctx: this.ctx,
+      config: this.config,
+      service: this.service,
+      members: this.members,
+      interactions: this.interactions,
+      commands: this.commands,
+      messages: this.messages,
+      operations: this.operations,
+      setMemberRuntimeState: (teamId, slotId, status) => this.setMemberRuntimeState(teamId, slotId, status),
+      storedSessionIds: () => this.storedSessionIds(),
+      assertToolIdentity: (agent, teamId, conversationId, slotId) => {
+        this.assertToolIdentity(agent, teamId, conversationId, slotId)
+      },
+      rulesFor: (target: TeamMemberSlot) => this.rulesFor(target),
+    }
   }
 
-  activateMember(teamId: string, slotId: string): Promise<TeamAggregate> {
-    return this.operations.run(teamId, async () => {
-      const team = this.service.getTeam(teamId)
-      const member = team.members[slotId]
-      if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
-      const conversations = this.service.listConversations(teamId).items
-      for (const conversation of conversations) {
-        await this.ensureConversationOnline(teamId, conversation.id)
-      }
-      const first = conversations[0]
-      if (first !== undefined) {
-        const current = this.service.getTeam(teamId)
-        const readyMember = current.members[slotId]
-        if (readyMember === undefined) {
-          throw new AgentTeamError('MEMBER_NOT_FOUND', `Member '${slotId}' disappeared during activation`)
-        }
-        const notice = systemTeamMessage({
-          team: current,
-          conversationId: first.id,
-          recipientSlotId: current.leaderSlotId,
-          content: [
-            `新成员「${readyMember.displayName}」已加入团队。`,
-            `成员 ID：${readyMember.id}`,
-            `模型：${this.service.assistantForMember(readyMember).provider} / ${this.service.assistantForMember(readyMember).model}`,
-            '状态：已就绪，可以分配任务。',
-          ].join('\n'),
-        })
-        await this.service.updateRuntimeTeam(
-          teamId,
-          latest => ({ ...latest, outbox: { ...latest.outbox, [notice.id]: notice } }),
-          'team.member_ready',
-          `Member ${readyMember.displayName} is ready`,
-        )
-        await this.messages.deliver(teamId, notice.id)
-      }
-      return this.service.getTeam(teamId)
-    })
+  async activateMember(teamId: string, slotId: string): Promise<TeamAggregate> {
+    return await memberActivation.activateMember(this.activationDeps(), teamId, slotId)
   }
+
+  private async freshMemberContext(teamId: string, conversationId: string, slotId: string): Promise<void> {
+    await memberActivation.freshMemberContext(this.activationDeps(), teamId, conversationId, slotId)
+  }
+
+  private async ensureConversationOnline(teamId: string, conversationId: string): Promise<void> {
+    await memberActivation.ensureConversationOnline(this.activationDeps(), teamId, conversationId)
+  }
+
+  private leaderAgent(conversation: TeamConversation): Agent | undefined {
+    return memberActivation.leaderAgent(this.activationDeps(), conversation)
+  }
+
+  private requireSendableTeam(teamId: string): TeamAggregate {
+    return memberActivation.requireSendableTeam(this.activationDeps(), teamId)
+  }
+
 
   removeMember(teamId: string, slotId: string): Promise<TeamAggregate> {
     return this.operations.run(teamId, async () => {
@@ -1215,224 +1164,10 @@ export class TeamRuntime {
     )
   }
 
-  /**
-   * Bring one conversation's member Sessions online. Other conversations keep
-   * whatever Session state they already had, so several conversations can run
-   * concurrently without interrupting each other.
-   */
-  private async ensureConversationOnline(teamId: string, conversationId: string): Promise<void> {
-    const team = this.service.getTeam(teamId)
-    const conversation = this.service.getConversation(teamId, conversationId)
-    // Only members that are supposed to be running and are not on yet need
-    // starting. Nothing to start means nothing to open, and a draft team must
-    // stay dormant when its 团队 view is touched.
-    // The Leader is the Session's own Agent, so it is never one of the member
-    // Sessions this brings online.
-    const starting = Object.values(team.members).filter(member => {
-      if (member.id === team.leaderSlotId) return false
-      if (member.desiredState !== 'online') return false
-      const sessionId = conversation.memberSessions[member.id]
-      return sessionId === undefined || !this.members.has(sessionId)
-    })
-    if (starting.length === 0) return
-    // Members are subagents of the Session's own Agent, so that Agent has to be
-    // live: it is the parent the Harness records for every child Session.
-    const leader = this.requireLeaderAgent(conversation)
-    const target = conversationWorkspace(team, conversation)
-    if (target === undefined) {
-      throw new AgentTeamError(
-        'WORKSPACE_UNAVAILABLE',
-        `Session '${conversation.sessionId ?? conversation.id}' has no Workspace`,
-      )
-    }
-    const workspace = this.ctx.workspaceRegistry.get(WorkspaceId(target.id))
-    if (workspace === undefined || await workspace.status() !== 'ok' || workspace.path !== target.path) {
-      throw new AgentTeamError('WORKSPACE_UNAVAILABLE', `Workspace '${target.id}' is unavailable or changed`)
-    }
-    // Assign a Session id to every member that does not have one yet, then
-    // activate; ids are persisted before any Agent is created so a crash
-    // mid-activation cannot orphan a Session.
-    const pending: Record<string, string> = {}
-    for (const member of Object.values(team.members)) {
-      if (member.id === team.leaderSlotId) continue
-      if (member.desiredState !== 'online') continue
-      if (conversation.memberSessions[member.id] !== undefined) continue
-      pending[member.id] = `agent-team:${randomUUID()}`
-    }
-    const assigned = Object.keys(pending).length === 0
-      ? conversation
-      : await this.service.assignMemberSessions(teamId, conversationId, pending)
-    const materialized = await this.storedSessionIds()
-    await mapConcurrent(Object.values(team.members), this.config.runtimeConcurrency, async member => {
-      if (member.id === team.leaderSlotId) return
-      if (member.desiredState !== 'online') return
-      const sessionId = assigned.memberSessions[member.id]
-      if (sessionId === undefined) return
-      await this.ensureMemberOnline(team, member, conversation, sessionId, materialized, target, leader)
-    })
-    // Members are online, so whatever made the team 'error' — a startup
-    // recovery that lost a session race, say — is over. Keeping the stale
-    // state would keep refusing every later message.
-    const online = this.service.getTeam(teamId)
-    if (online.state === 'error') {
-      await this.service.updateRuntimeTeam(
-        teamId,
-        current => ({ ...current, state: 'active' }),
-        'team.recovered',
-        `Team ${online.name} recovered by opening a conversation`,
-      )
-    }
-  }
 
-  /**
-   * A team in `error` is recoverable, not unusable: the send paths open its
-   * conversation again and lift it back to `active`. Every other state
-   * (draft, starting, deleting) really cannot take a message yet, and says so.
-   */
-  private requireSendableTeam(teamId: string): TeamAggregate {
-    const team = this.service.getTeam(teamId)
-    if (team.state !== 'active' && team.state !== 'error') {
-      throw new AgentTeamError(
-        'TEAM_NOT_ACTIVE',
-        `Team '${team.name}' cannot take messages while it is '${team.state}'`,
-      )
-    }
-    return team
-  }
 
-  /**
-   * The Harness Session Agent that leads one conversation. Members are its
-   * subagents, so it must be live before they can be created.
-   */
-  private requireLeaderAgent(conversation: TeamConversation): Agent {
-    const sessionId = conversation.sessionId
-    const agent = sessionId === undefined ? undefined : this.ctx.agents.get(SessionId(sessionId))
-    if (agent === undefined) {
-      throw new AgentTeamError(
-        'SESSION_UNAVAILABLE',
-        '该团队所在的会话尚未打开，请先打开该会话再继续',
-      )
-    }
-    return agent
-  }
 
-  private leaderAgent(conversation: TeamConversation): Agent | undefined {
-    const sessionId = conversation.sessionId
-    return sessionId === undefined ? undefined : this.ctx.agents.get(SessionId(sessionId))
-  }
 
-  private async ensureMemberOnline(
-    team: TeamAggregate,
-    member: TeamMemberSlot,
-    conversation: TeamConversation,
-    sessionIdValue: string,
-    materialized: Set<string>,
-    workspace: TeamWorkspace,
-    leader: Agent,
-  ): Promise<void> {
-    const prior = this.members.agentOf(sessionIdValue)
-    if (prior !== undefined) {
-      // A member that is already live still gets the identity record: catalogs
-      // read the log, and one written before this release has none.
-      identifyMemberAsSubagent(prior.handle.agent, member.displayName)
-      return
-    }
-    const sessionId = SessionId(sessionIdValue)
-    const live = this.ctx.agents.get(sessionId)
-    if (live !== undefined) {
-      await this.service.updateRuntimeTeam(
-        team.id,
-        current => ({ ...current, state: 'ownership_conflict' }),
-        'team.ownership_conflict',
-        `Session ${sessionIdValue} is live but not owned by dsh-squad`,
-      )
-      throw new AgentTeamError(
-        'AGENT_HANDLE_OWNERSHIP_CONFLICT',
-        `Session '${sessionIdValue}' is live without this plugin's AgentHandle`,
-      )
-    }
-    const conversationId = conversation.id
-
-    // Resolve the member's assistant once per activation. Members inherit the
-    // template live, so this is the configuration that takes effect now; the
-    // next activation picks up whatever the template says then.
-    const assistant = this.service.assistantForMember(member)
-    await this.assertModelAvailable(member, assistant.provider, assistant.model)
-
-    try {
-      this.members.beginActivation(sessionIdValue, { teamId: team.id, conversationId, slotId: member.id })
-      const modelSelection: ModelSelectionRef = {
-        current: {
-          provider: assistant.provider,
-          model: assistant.model,
-          ...(member.reasoningEffort === undefined
-            ? {}
-            : { reasoningEffort: ReasoningEffortId(member.reasoningEffort) }),
-        },
-        assembled: undefined,
-      }
-      const setup = memberAgentSetup(
-        {
-          ctx: this.ctx,
-          service: this.service,
-          interactions: this.interactions,
-          commands: this.commands,
-          rulesFor: (target: TeamMemberSlot) => this.rulesFor(target),
-          assertToolIdentity: (agent: Agent | undefined, teamId: string, convId: string, slotId: string) => {
-            this.assertToolIdentity(agent, teamId, convId, slotId)
-          },
-        },
-        { team, conversation, member, assistant, modelSelection, workspace },
-      )
-      const agentOptions = {
-        provider: assistant.provider,
-        model: assistant.model,
-      }
-      // The member is a subagent of the Session's own Agent: `parentAgent` is
-      // the runtime owner and the child session's durable lineage names that
-      // Session, which is what keeps the member out of the Harness sidebar.
-      const childMeta = {
-        cwd: workspace.path,
-        parentSession: SessionId(conversation.sessionId ?? ''),
-        origin: 'subagent' as const,
-        delegationDepth: (leader.session.header.delegationDepth ?? 0) + 1,
-        agentPreset: assistant.agentPresetId,
-      }
-      const handle = materialized.has(sessionIdValue)
-        ? await this.ctx.agents.resume({ resumeSessionId: sessionId, parentAgent: leader, agentOptions, setup })
-        : await this.ctx.agents.create({
-          sessionId,
-          parentAgent: leader,
-          meta: childMeta,
-          agentOptions,
-          setup,
-        })
-      this.members.attach(sessionIdValue, {
-        teamId: team.id,
-        conversationId,
-        slotId: member.id,
-        handle,
-        modelSelection,
-      })
-      this.members.endActivation(sessionIdValue)
-      await this.setMemberRuntimeState(team.id, member.id, handle.agent.status)
-    } catch (error) {
-      this.members.endActivation(sessionIdValue)
-      const causeMessage = error instanceof Error ? error.message : String(error)
-      this.ctx.logger.warn(
-        `agent-team: member '${member.displayName}' activation failed: ${causeMessage}`,
-        error,
-      )
-      throw error instanceof AgentTeamError
-        ? error
-        : new AgentTeamError(
-          'SESSION_CREATE_FAILED',
-          `成员“${member.displayName}”启动失败：${causeMessage}${sessionBusyHint(error)}`,
-          { memberId: member.id, cause: causeMessage },
-          { cause: error },
-        )
-    }
-  }
 
   private assertToolIdentity(
     agent: Agent | undefined,
@@ -1579,16 +1314,6 @@ function mapMembers(
   return Object.fromEntries(Object.entries(team.members).map(([id, member]) => [id, map(member)]))
 }
 
-/**
- * Session write ownership is a cross-process lock, so a member that cannot
- * start because some other DSH process still holds its Session is the one
- * activation failure the user can actually do something about.
- */
-function sessionBusyHint(error: unknown): string {
-  return error instanceof Error && error.name === 'SessionAlreadyOwnedError'
-    ? '（该成员的 Session 正被另一个 DSH 进程占用，请关掉重复实例后重试）'
-    : ''
-}
 
 /**
  * A team is legacy when any member still carries a team-scoped `sessionId`.
@@ -1630,17 +1355,3 @@ function withReasoningEffort(
   return reasoningEffort === undefined ? rest : { ...rest, reasoningEffort }
 }
 
-async function mapConcurrent<T>(
-  values: readonly T[],
-  concurrency: number,
-  run: (value: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0
-  const workers = Array.from({ length: Math.min(concurrency, values.length) }, async () => {
-    while (cursor < values.length) {
-      const index = cursor++
-      await run(values[index]!)
-    }
-  })
-  await Promise.all(workers)
-}

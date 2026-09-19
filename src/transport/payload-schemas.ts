@@ -1,4 +1,16 @@
 import { z } from 'zod'
+import type { InteractionResponseInput } from './contracts.js'
+
+/**
+ * What the request schema proves about a reader's answer, which is slightly
+ * looser than the view type: an absent `custom` reads as `undefined`.
+ */
+type ParsedInteractionResponse =
+  | { kind: 'approval'; outcome: 'allowed-once' | 'rejected' }
+  | {
+    kind: 'question'
+    answers: Array<{ id: string; selected: string[]; custom?: string | undefined }>
+  }
 
 /**
  * What every API method accepts, in one place.
@@ -32,6 +44,29 @@ const interactionResponseSchema = z.discriminatedUnion('kind', [
   }).strict(),
 ])
 export { idPayload, sessionIdPayload, interactionResponseSchema }
+
+/**
+ * The reader's answer to a member's question or approval, in the shape the
+ * service takes.
+ *
+ * Both the team room and the assistant designer let the reader answer, and both
+ * wrote out the same narrowing by hand. The schema above already proves which
+ * of the two it is, so the difference is one branch, stated once.
+ */
+export function interactionResponseOf(
+  response: ParsedInteractionResponse,
+): InteractionResponseInput {
+  if (response.kind === 'approval') return response
+  return {
+    kind: 'question',
+    answers: response.answers.map(answer => ({
+      id: answer.id,
+      selected: answer.selected,
+      ...(answer.custom === undefined ? {} : { custom: answer.custom }),
+    })),
+  }
+}
+
 
 export const PAYLOAD_SCHEMAS = {
   'catalog.model.get': z.object({

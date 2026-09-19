@@ -54,3 +54,28 @@ describe('dsh-squad transport contracts', () => {
     expectTypeOf<AgentTeamResult<'team.workspace.list'>>().toEqualTypeOf<WorkspaceEntryView[]>()
   })
 })
+
+describe('interactionResponseOf', () => {
+  it('passes an approval through unchanged', async () => {
+    const { interactionResponseOf } = await import('../src/transport/payload-schemas.js')
+    const approval = { kind: 'approval' as const, outcome: 'allowed-once' as const }
+    expect(interactionResponseOf(approval)).toEqual(approval)
+  })
+
+  it('drops an answer field that was not given rather than storing undefined', async () => {
+    const { interactionResponseOf } = await import('../src/transport/payload-schemas.js')
+    const response = interactionResponseOf({
+      kind: 'question',
+      answers: [{ id: 'q1', selected: ['a'] }, { id: 'q2', selected: [], custom: '其他' }],
+    })
+    expect(response).toEqual({
+      kind: 'question',
+      answers: [
+        { id: 'q1', selected: ['a'] },
+        { id: 'q2', selected: [], custom: '其他' },
+      ],
+    })
+    // The key must be absent, not present as undefined: this shape is stored.
+    expect(Object.keys((response as { answers: object[] }).answers[0]!)).toEqual(['id', 'selected'])
+  })
+})

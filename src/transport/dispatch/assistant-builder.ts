@@ -1,5 +1,5 @@
 import type { AgentTeamMethod } from '../contracts.js'
-import { parsePayload } from '../payload-schemas.js'
+import { interactionResponseOf, parsePayload } from '../payload-schemas.js'
 import type { DispatchHandler } from './types.js'
 
 /** The chat that designs an assistant. */
@@ -33,16 +33,7 @@ export const TABLE: Partial<Record<AgentTeamMethod, DispatchHandler>> = {
       await ctx.service.respondToAssistantBuilderInteraction(
         payload.sessionId,
         payload.interactionId,
-        payload.response.kind === 'approval'
-          ? payload.response
-          : {
-            kind: 'question',
-            answers: payload.response.answers.map(answer => ({
-              id: answer.id,
-              selected: answer.selected,
-              ...(answer.custom === undefined ? {} : { custom: answer.custom }),
-            })),
-          },
+        interactionResponseOf(payload.response),
       )
       return { accepted: true }
     },

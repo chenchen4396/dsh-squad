@@ -1,5 +1,5 @@
 import type { AgentTeamMethod } from '../contracts.js'
-import { parsePayload } from '../payload-schemas.js'
+import { interactionResponseOf, parsePayload } from '../payload-schemas.js'
 import type { DispatchHandler } from './types.js'
 
 /** A team running in a Session: its room, its messages, and the workbench. */
@@ -80,16 +80,7 @@ export const TABLE: Partial<Record<AgentTeamMethod, DispatchHandler>> = {
         payload.teamId,
         payload.slotId,
         payload.interactionId,
-        payload.response.kind === 'approval'
-          ? payload.response
-          : {
-            kind: 'question',
-            answers: payload.response.answers.map(answer => ({
-              id: answer.id,
-              selected: answer.selected,
-              ...(answer.custom === undefined ? {} : { custom: answer.custom }),
-            })),
-          },
+        interactionResponseOf(payload.response),
         payload.conversationId,
       )
       return { accepted: true }

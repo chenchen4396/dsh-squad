@@ -18,6 +18,7 @@ import { LiveStreamBuffer } from './live-stream-buffer.js'
 import { decideLeaderAnswer } from './leader-answer.js'
 import { memberAgentSetup } from './member-context.js'
 import { HandoffRelay } from './handoff-relay.js'
+import * as leaderAttachment from './leader-attachment.js'
 import { subscribeRuntimeEvents } from './runtime-events.js'
 import { installCompositionSections, teamComposition } from './team-composition.js'
 import { MemberRegistry } from './member-registry.js'
@@ -1459,133 +1460,31 @@ export class TeamRuntime {
   /** Install the team composition on a bound Session's own Agent. */
   // ── The Leader: the Session’s own Agent ─────────────────────────────────
   private attachLeaderForSession(sessionId: string): void {
-    const conversation = this.service.findConversationBySession(sessionId)
-    if (conversation !== undefined) this.attachLeader(conversation)
+    leaderAttachment.attachLeaderForSession(this.leaderDeps(), sessionId)
   }
 
-  /**
-   * Make one Session's own Agent act as the team Leader: its instructions and
-   * the roster are added to the Agent's prompt, and the team tools are exposed
-   * so it can create tasks and message members from the 对话 view itself.
-   *
-   * The Leader keeps the Session's own model, preset and permissions — only the
-   * team composition is added, and only for as long as the binding lasts.
-   */
   private attachLeader(conversation: TeamConversation): void {
-    const sessionId = conversation.sessionId
-    if (sessionId === undefined) return
-    const agent = this.ctx.agents.get(SessionId(sessionId))
-    if (agent === undefined) return
-    const team = this.service.getTeam(conversation.teamId)
-    const member = team.members[team.leaderSlotId]
-    if (member === undefined) return
-    const existing = this.members.leaderOf(sessionId)
-    if (
-      existing !== undefined
-      && existing.teamId === team.id
-      && existing.conversationId === conversation.id
-      && existing.slotId === member.id
-    ) {
-      return
-    }
-    this.detachLeader(sessionId)
-    const agentCtx = agent.ctx
-    const disposers: Array<() => void> = []
-    try {
-      const composition = teamComposition(        {
-          service: this.service,
-          commands: this.commands,
-          rulesFor: (target: TeamMemberSlot) => this.rulesFor(target),
-          assertToolIdentity: (agent: Agent | undefined, teamId: string, convId: string, slotId: string) => {
-            this.assertToolIdentity(agent, teamId, convId, slotId)
-          },
-        },         {
-          team,
-          conversationId: conversation.id,
-          slotId: member.id,
-          // The Leader slot moves when the team changes leader, so it is read
-          // when a tool is called rather than captured here.
-          actorSlotId: () => this.service.getTeam(team.id).leaderSlotId,
-          promptMember: (latest: TeamAggregate) => latest.members[latest.leaderSlotId],
-        })
-      disposers.push(...installCompositionSections(
-        agentCtx,
-                {
-          service: this.service,
-          commands: this.commands,
-          rulesFor: (target: TeamMemberSlot) => this.rulesFor(target),
-          assertToolIdentity: (agent: Agent | undefined, teamId: string, convId: string, slotId: string) => {
-            this.assertToolIdentity(agent, teamId, convId, slotId)
-          },
-        },
-                {
-          team,
-          conversationId: conversation.id,
-          slotId: member.id,
-          // The Leader slot moves when the team changes leader, so it is read
-          // when a tool is called rather than captured here.
-          actorSlotId: () => this.service.getTeam(team.id).leaderSlotId,
-          promptMember: (latest: TeamAggregate) => latest.members[latest.leaderSlotId],
-        },
-        composition.identitySection,
-        composition.rosterSection,
-      ))
-      disposers.push(registerTeamTools(agentCtx, {
-        ...composition.tools,
-        answerMember: async input => {
-          const pending = this.interactions.pending(input.interactionId)
-          if (pending === undefined) {
-            throw new AgentTeamError('INTERACTION_NOT_FOUND', '该交互请求已结束或不存在')
-          }
-          const decision = decideLeaderAnswer({
-            pending,
-            ...(input.decision === undefined ? {} : { decision: input.decision }),
-            leaderMode: this.handoffRelay.leaderSandboxMode(team.id, conversation.id),
-            delegated: this.service.getConversation(team.id, conversation.id).delegateInteractions === true,
-          })
-          if (decision.userOnly) this.interactions.markUserOnly(pending.id)
-          if (decision.refusal !== undefined) {
-            throw new AgentTeamError('INVALID_REQUEST', decision.refusal)
-          }
-          const answered = this.interactions.answerAsLeader(input.interactionId, input)
-          return { interactionId: input.interactionId, answered }
-        },
-      }))
-      // Registered so «替我审批» can answer the Leader's own requests; while it
-      // is off the scope does not accept this Session and the Harness interface
-      // answers them instead.
-      this.interactions.attach(agentCtx, agent)
-      const dispose = (): void => {
-        for (const disposer of disposers.reverse()) {
-          try {
-            disposer()
-          } catch (error) {
-            this.ctx.logger.warn('agent-team: failed to remove a Leader registration', error)
-          }
-        }
-      }
-      this.members.attachLeader(sessionId, {
-        teamId: team.id,
-        conversationId: conversation.id,
-        slotId: member.id,
-        dispose,
-      })
-    } catch (error) {
-      for (const disposer of disposers.reverse()) {
-        try {
-          disposer()
-        } catch { /* rolling back a failed attach */ }
-      }
-      throw error
-    }
+    leaderAttachment.attachLeader(this.leaderDeps(), conversation)
   }
 
-  /** Remove the team composition from one Session's Agent. */
   private detachLeader(sessionId: string): void {
-    const attachment = this.members.leaderOf(sessionId)
-    if (attachment === undefined) return
-    this.members.detachLeader(sessionId)
-    attachment.dispose()
+    leaderAttachment.detachLeader(this.leaderDeps(), sessionId)
+  }
+
+  /** What the Leader attachment needs from this runtime. */
+  private leaderDeps(): leaderAttachment.LeaderDeps {
+    return {
+      ctx: this.ctx,
+      service: this.service,
+      members: this.members,
+      interactions: this.interactions,
+      commands: this.commands,
+      handoffRelay: this.handoffRelay,
+      rulesFor: (target: TeamMemberSlot) => this.rulesFor(target),
+      assertToolIdentity: (agent, teamId, conversationId, slotId) => {
+        this.assertToolIdentity(agent, teamId, conversationId, slotId)
+      },
+    }
   }
 
   /**

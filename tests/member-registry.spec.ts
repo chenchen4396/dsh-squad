@@ -88,19 +88,6 @@ describe('MemberRegistry', () => {
     expect(registry.leaderOf('l1')).toBeUndefined()
   })
 
-  it('forgets every record about one Session, whichever kind it is', () => {
-    const registry = new MemberRegistry()
-    registry.attach('s1', member('t1', 'slot-1'))
-    registry.attachLeader('s1', leader('t1', 'leader-slot'))
-    registry.beginActivation('s1', { teamId: 't1', conversationId: 'c1', slotId: 'slot-1' })
-
-    registry.forget('s1')
-    // A stale entry would make a later Session with the same id look owned.
-    expect(registry.has('s1')).toBe(false)
-    expect(registry.agentOf('s1')).toBeUndefined()
-    expect(registry.leaderOf('s1')).toBeUndefined()
-    expect(registry.activationOf('s1')).toBeUndefined()
-  })
 
   it('clears members without touching Leaders', () => {
     const registry = new MemberRegistry()

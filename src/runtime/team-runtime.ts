@@ -978,7 +978,7 @@ export class TeamRuntime {
       }
 
       try {
-        const ownedEntries = [...this.members.agentsWithIds()].filter(([, entry]) => entry.teamId === teamId)
+        const ownedEntries = this.members.agentsInTeam(teamId)
         for (const [, entry] of ownedEntries) {
           entry.handle.agent.cancel({ kind: 'user' }, { keepInbox: false })
         }
@@ -1935,8 +1935,7 @@ export class TeamRuntime {
 
   /** Every Session currently online for one member, across all conversations. */
   private ownedForSlot(teamId: string, slotId: string): OwnedAgent[] {
-    return [...this.members.agents()]
-      .filter(owned => owned.teamId === teamId && owned.slotId === slotId)
+    return this.members.agentsForSlot(teamId, slotId)
   }
 
   /**

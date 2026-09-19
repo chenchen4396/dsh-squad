@@ -55,7 +55,7 @@ export class MemberRegistry {
 
   /** Which member a Session acts as, whether owned, Leader, or being activated. */
   identityOf(sessionId: string): { teamId: string; conversationId: string; slotId: string } | undefined {
-    return this.members.get(sessionId) ?? this.leaders.get(sessionId) ?? this.activations.get(sessionId)
+    return this.members.get(sessionId) ?? this.leaders.get(sessionId) ?? this.activationOf(sessionId)
   }
 
   /** Every member Session this runtime owns. */
@@ -131,19 +131,6 @@ export class MemberRegistry {
   }
 
   endActivation(sessionId: string): void {
-    this.activations.delete(sessionId)
-  }
-
-  /**
-   * Drop every record about one Session.
-   *
-   * Used when a bound Session's own Agent goes away: nothing it was part of is
-   * live any more, and leaving a stale entry would make a later Session with
-   * the same id look like one this runtime already owns.
-   */
-  forget(sessionId: string): void {
-    this.members.delete(sessionId)
-    this.leaders.delete(sessionId)
     this.activations.delete(sessionId)
   }
 

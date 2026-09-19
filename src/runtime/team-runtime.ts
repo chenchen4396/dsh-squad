@@ -15,6 +15,7 @@ import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Config } from '../config.js'
 import { AgentTeamError } from '../domain/errors.js'
 import { OperationQueue } from './operation-queue.js'
+import { PublishCoalescer } from './publish-coalescer.js'
 import {
   conversationWorkspace,
   mentionedSlotIds,
@@ -104,7 +105,7 @@ export class TeamRuntime {
   private readonly disposeCreatedListener: () => void
   private readonly disposeDisposedListener: () => void
   private readonly disposeUserMessageListener: () => void
-  private readonly conversationPublishes = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly conversationPublishes = new PublishCoalescer()
   /** Transient live assistant output per member session, keyed by session id. */
   private readonly liveStreams = new Map<string, { text: string; reasoning: string }>()
   /** Member requests already handed to the Leader, so each is announced once. */
@@ -189,16 +190,13 @@ export class TeamRuntime {
     this.disposeConversationListener = ctx.on('session/event', (session) => {
       const sessionId = String(session.id)
       if (this.owned.get(sessionId) === undefined && this.leaders.get(sessionId) === undefined) return
-      if (this.conversationPublishes.has(sessionId)) return
-      const timer = setTimeout(() => {
-        this.conversationPublishes.delete(sessionId)
+      this.conversationPublishes.schedule(sessionId, () => {
         try {
           this.publishOwnedConversation(sessionId)
         } catch (error) {
           this.ctx.logger.warn('agent-team: failed to publish conversation update', error)
         }
-      }, 48)
-      this.conversationPublishes.set(sessionId, timer)
+      })
     })
     this.disposeStreamListener = ctx.on('agent/assistant-stream', ({ agent, frame }) => {
       const sessionId = String(agent.id)
@@ -1139,8 +1137,7 @@ export class TeamRuntime {
     this.disposeUserMessageListener()
     for (const sessionId of [...this.leaders.keys()]) this.detachLeader(sessionId)
     await this.interactions.dispose()
-    for (const timer of this.conversationPublishes.values()) clearTimeout(timer)
-    this.conversationPublishes.clear()
+    this.conversationPublishes.cancelAll()
     await this.operations.settled()
     const owned = [...this.owned.values()]
     for (const entry of owned) entry.handle.agent.cancel({ kind: 'disposed' }, { keepInbox: true })

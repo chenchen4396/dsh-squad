@@ -17,6 +17,7 @@ import { AgentTeamError } from '../domain/errors.js'
 import { LiveStreamBuffer } from './live-stream-buffer.js'
 import { decideLeaderAnswer } from './leader-answer.js'
 import { memberAgentSetup } from './member-context.js'
+import { subscribeRuntimeEvents } from './runtime-events.js'
 import { installCompositionSections, teamComposition } from './team-composition.js'
 import { MemberRegistry } from './member-registry.js'
 import { OperationQueue } from './operation-queue.js'
@@ -101,12 +102,8 @@ export class TeamRuntime {
   private readonly members = new MemberRegistry()
   /** Team composition installed on a Session Agent, keyed by that session id. */
   private readonly operations = new OperationQueue()
-  private readonly disposeStatusListener: () => void
-  private readonly disposeConversationListener: () => void
-  private readonly disposeStreamListener: () => void
-  private readonly disposeCreatedListener: () => void
-  private readonly disposeDisposedListener: () => void
-  private readonly disposeUserMessageListener: () => void
+  /** Every event subscription this runtime holds, removed together. */
+  private subscriptions: () => void = () => {}
   private readonly conversationPublishes = new PublishCoalescer()
   /** Transient live assistant output per member session, keyed by session id. */
   private readonly liveStreams = new LiveStreamBuffer()
@@ -166,60 +163,15 @@ export class TeamRuntime {
         }
       },
     })
-    // A Session's own Agent is the Leader of whichever team that Session has
-    // enabled, so the composition is installed when the Agent appears — on the
-    // first conversation view, on a reload, or after a Harness restart — and
-    // dropped when it goes away.
-    this.disposeCreatedListener = ctx.on('agent/created', ({ agent }) => {
-      this.attachLeaderForSession(String(agent.id))
-    })
-    this.disposeDisposedListener = ctx.on('agent/disposed', ({ agent }) => {
-      this.members.detachLeader(String(agent.id))
-    })
-    // Everything the user types goes through the Harness composer now, so a
-    // bound Session's own user message is what the room must show — and what
-    // routes to a member the message mentions.
-    this.disposeUserMessageListener = ctx.on('session/event', (session, event) => {
-      if (event.type !== 'user/message') return
-      this.observeUserMessage(String(session.id), event)
-    })
-    this.disposeStatusListener = ctx.on('agent/status', ({ agent, status }) => {
-      const owned = this.members.agentOf(String(agent.id))
-      if (owned === undefined) return
-      void this.setMemberRuntimeState(owned.teamId, owned.slotId, status)
-        .catch(error => this.ctx.logger.warn('agent-team: failed to persist agent status', error))
-    })
-    this.disposeConversationListener = ctx.on('session/event', (session) => {
-      const sessionId = String(session.id)
-      if (this.members.agentOf(sessionId) === undefined && this.members.leaderOf(sessionId) === undefined) return
-      this.conversationPublishes.schedule(sessionId, () => {
-        try {
-          this.publishOwnedConversation(sessionId)
-        } catch (error) {
-          this.ctx.logger.warn('agent-team: failed to publish conversation update', error)
-        }
-      })
-    })
-    this.disposeStreamListener = ctx.on('agent/assistant-stream', ({ agent, frame }) => {
-      const sessionId = String(agent.id)
-      if (!this.members.has(sessionId)) return
-      // What each frame means is this listener's business; holding the
-      // in-progress text is the buffer's.
-      if (frame.type === 'start') {
-        this.liveStreams.begin(sessionId)
-      } else if (frame.type === 'chunk') {
-        const chunk = frame.chunk
-        if (chunk.type === 'text-delta') this.liveStreams.append(sessionId, { text: chunk.text })
-        if (chunk.type === 'reasoning-delta') this.liveStreams.append(sessionId, { reasoning: chunk.text })
-        if (chunk.type === 'block-end' && chunk.block.type === 'text') {
-          this.liveStreams.replace(sessionId, { text: chunk.block.text })
-        }
-        if (chunk.type === 'block-end' && chunk.block.type === 'reasoning') {
-          this.liveStreams.replace(sessionId, { reasoning: chunk.block.text })
-        }
-      } else {
-        this.liveStreams.end(sessionId)
-      }
+    this.subscriptions = subscribeRuntimeEvents(ctx, {
+      members: this.members,
+      conversationPublishes: this.conversationPublishes,
+      liveStreams: this.liveStreams,
+      warn: (message, error) => { ctx.logger.warn(message, error) },
+      attachLeaderForSession: sessionId => this.attachLeaderForSession(sessionId),
+      observeUserMessage: (sessionId, event) => this.observeUserMessage(sessionId, event),
+      setMemberRuntimeState: (teamId, slotId, status) => this.setMemberRuntimeState(teamId, slotId, status),
+      publishOwnedConversation: sessionId => this.publishOwnedConversation(sessionId),
     })
   }
 
@@ -1139,12 +1091,7 @@ export class TeamRuntime {
     if (this.closing) return
     this.closing = true
     this.operations.close()
-    this.disposeStatusListener()
-    this.disposeConversationListener()
-    this.disposeStreamListener()
-    this.disposeCreatedListener()
-    this.disposeDisposedListener()
-    this.disposeUserMessageListener()
+    this.subscriptions()
     for (const sessionId of [...this.members.leaderIds()]) this.detachLeader(sessionId)
     await this.interactions.dispose()
     this.conversationPublishes.cancelAll()

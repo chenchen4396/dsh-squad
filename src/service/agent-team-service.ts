@@ -6,6 +6,7 @@ import { fallbackSessionTitle } from '@deepseek-ai/dsh-session-title'
 import type { Config } from '../config.js'
 import type { BundleImportSummary, SquadBundle } from '../domain/bundle.js'
 import { exportConfigured, importInto } from './bundle-service.js'
+import { CatalogCache } from './catalog-cache.js'
 import { AgentTeamError } from '../domain/errors.js'
 import {
   deleteRuleDocument,
@@ -86,8 +87,6 @@ const AUTO_TITLE_BYTES = 40
  * UI changes that fast — a provider list, a preset list, the Workspace list —
  * and a view opening must not wait on it.
  */
-const CATALOG_TTL_MS = 5 * 60_000
-
 /** What the sidebar shows about a conversation beyond its stored record. */
 interface ConversationDisplay {
   /** Earliest user message text; absent when nobody has spoken yet. */
@@ -147,26 +146,14 @@ export interface McpCatalogSnapshot {
   }>
 }
 
-const PERMISSION_PRESET_LABELS: Readonly<Record<string, string>> = {
-  'read-only': '只读',
-  'workspace-write': '工作区可写',
-  'danger-full-access': '完全访问',
-  standard: '标准',
-}
-
 export class AgentTeamService extends Service {
   private readonly listeners = new Set<(change: AgentTeamChange) => void>()
   private cursor = 0
   /** Last complete catalog read, and when it was taken. */
-  private catalogValue?: CatalogSnapshot
-  private catalogReadAt = 0
-  /** The one complete read in flight, shared by every caller. */
-  private catalogRead: Promise<void> | undefined
-  /** Last agent-preset list read; the service behind it takes tens of seconds. */
-  private catalogAgentPresets: CatalogSnapshot['agentPresets'] | undefined
   private runtime?: TeamRuntime
   private assistantBuilderRuntime?: AssistantBuilderRuntime
   private readonly workspace: WorkspaceService
+  private readonly catalogCache: CatalogCache
 
   constructor(
     ctx: Context,
@@ -174,6 +161,9 @@ export class AgentTeamService extends Service {
     private readonly store: AgentTeamStore,
   ) {
     super(ctx, 'agentTeam')
+    this.catalogCache = new CatalogCache(ctx, () => {
+      this.publish('catalog', 'models', 0, 'catalog.models_updated')
+    })
     this.workspace = new WorkspaceService(
       ctx,
       store,
@@ -224,89 +214,9 @@ export class AgentTeamService extends Service {
    * refresh publishes a catalog change, so open views take the whole directory
    * a moment later.
    */
-  async catalog(): Promise<CatalogSnapshot> {
-    const cached = this.catalogValue
-    if (cached !== undefined) {
-      if (Date.now() - this.catalogReadAt > CATALOG_TTL_MS) void this.refreshCatalog()
-      return cached
-    }
-    void this.refreshCatalog()
-    return this.readCatalogBasics()
-  }
-
-  /**
-   * The catalog without its two slow reads: no provider round trip, and no
-   * preset walk. Both are filled in by {@link readCatalog}; this is what a view
-   * opening can have right now.
-   */
-  private async readCatalogBasics(): Promise<CatalogSnapshot> {
-    const providers = this.ctx.llm.listProviders()
-    const workspaces = await Promise.all(this.ctx.workspaceRegistry.list().map(async workspace => ({
-      id: String(workspace.id),
-      path: workspace.path,
-      title: workspace.title,
-      status: await workspace.status(),
-    })))
-    return {
-      providers,
-      models: this.catalogValue?.models ?? {},
-      agentPresets: this.catalogAgentPresets ?? [],
-      permissionPresets: this.ctx.permissionPresets.names.map(name => {
-        const option = this.ctx.permissionPresets.optionOf(name)
-        return {
-          ...option,
-          name: PERMISSION_PRESET_LABELS[option.value] ?? option.name,
-        }
-      }),
-      workspaces,
-    }
-  }
-
-  /** The complete catalog: every provider's model list and the preset directory. */
-  private async readCatalog(): Promise<CatalogSnapshot> {
-    const basics = await this.readCatalogBasics()
-    const presets = await this.ctx.agentPresets.list()
-    this.catalogAgentPresets = presets.map(preset => ({
-      id: preset.id,
-      name: preset.name ?? preset.id,
-      ...(preset.description === undefined ? {} : { description: preset.description }),
-      ...(preset.broken === undefined ? {} : { broken: preset.broken }),
-    }))
-    const modelEntries = await Promise.all(basics.providers.map(async provider => [
-      provider.id,
-      (await this.ctx.llm.listModels(provider.id)).map(model => ({
-        id: model.id,
-        name: model.name,
-        ...(model.description === undefined ? {} : { description: model.description }),
-      })),
-    ] as const))
-    return {
-      ...basics,
-      models: Object.fromEntries(modelEntries),
-      agentPresets: this.catalogAgentPresets,
-    }
-  }
-
-  /** Rebuild the complete catalog once, however many callers ask for it. */
-  private refreshCatalog(): Promise<void> {
-    if (this.catalogRead !== undefined) return this.catalogRead
-    const read: Promise<void> = this.readCatalog()
-      .then(value => {
-        this.catalogValue = value
-        this.catalogReadAt = Date.now()
-        // Views holding the partial directory take the complete one now.
-        this.publish('catalog', 'models', 0, 'catalog.models_updated')
-      })
-      .catch(error => {
-        // A stale directory beats none: keep serving it and say so quietly.
-        if (this.catalogValue === undefined) throw error
-        this.ctx.logger.warn('agent-team: catalog refresh failed', error)
-      })
-      .finally(() => {
-        if (this.catalogRead === read) this.catalogRead = undefined
-      })
-    this.catalogRead = read
-    return read
+  /** The deployment's providers, models and presets, cached behind one read. */
+  catalog(): Promise<CatalogSnapshot> {
+    return this.catalogCache.get()
   }
 
   async modelCapabilities(providerValue: string, modelValue: string): Promise<ModelCapabilitiesSnapshot> {

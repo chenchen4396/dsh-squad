@@ -5,7 +5,7 @@ import { useAgentTeamData } from '../components.js'
 import { openTeams } from '../store.js'
 import { cachedBinding, cacheBinding } from '../view-cache.js'
 import { isTeamExecuting } from '../team-status.js'
-import { TeamWorkbench } from '../teams/TeamPanel.js'
+import { TeamWorkbench } from '../teams/TeamWorkbench.js'
 import css from '../AgentTeam.module.css'
 import type { SessionBindingView } from '../../transport/contracts.js'
 

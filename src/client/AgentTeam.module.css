@@ -5,6 +5,14 @@
  * radii, fifteen gaps and eleven type sizes in play — close enough to look
  * like mistakes rather than a decision. These are the steps that remain, named
  * for what they are for, so a new rule picks a step instead of inventing one.
+ *
+ * The values are the Harness's own, read off its primitives and its application
+ * stylesheet: radii from its Button (14/18), Input (8), Switch (10), Pill (12),
+ * Tag (999) and Modal (24); type from the five sizes it actually sets (11, 12,
+ * 13, 14, 16). A plugin that picks its own steps — 15px here, a 16px corner
+ * there — reads as a different application next to the one it is embedded in,
+ * even when it uses the same colours.
+ *
  * They are defined on the plugin's own root and inherit to every panel: a
  * stylesheet for one plugin has no business setting tokens on the document.
  */
@@ -25,7 +33,7 @@
   --squad-radius-sm: 6px;
   --squad-radius-md: 8px;
   --squad-radius-lg: 12px;
-  --squad-radius-xl: 16px;
+  --squad-radius-xl: 20px;
   --squad-radius-pill: 999px;
 
   /*
@@ -35,13 +43,13 @@
    */
   --squad-focus-ring: 2px solid var(--dsw-alias-brand-primary);
 
-  /* Type: metadata, labels, body, headings. */
-  --squad-text-micro: 10px;
+  /* Type: metadata, labels, body, headings — the Harness's five sizes. */
+  --squad-text-micro: 11px;
   --squad-text-xs: 11px;
   --squad-text-sm: 12px;
   --squad-text-md: 13px;
-  --squad-text-lg: 15px;
-  --squad-text-xl: 18px;
+  --squad-text-lg: 14px;
+  --squad-text-xl: 16px;
 }
 
 .floatingTeamLauncher:focus-visible,
@@ -1218,17 +1226,16 @@
 }
 
 .assistantBuilderNewConversation {
-  min-height: 34px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--squad-space-xs);
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--squad-radius-md);
+  gap: 6px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 18px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: var(--squad-text-sm);
+  font-size: 14px;
   cursor: pointer;
 }
 
@@ -1385,17 +1392,16 @@
   flex: 0 1 320px;
   min-width: 0;
   max-width: 320px;
-  height: 34px;
-  padding: 0 var(--squad-space-md);
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--squad-radius-md);
+  height: 32px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
   outline: 0;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: var(--squad-text-md);
+  font-size: 14px;
   font-weight: 500;
-  line-height: 20px;
+  line-height: 22px;
 }
 
 .assistantBuilderModelSelect:focus-visible {
@@ -1485,17 +1491,17 @@
 .builderSearch {
   flex: none;
   width: 100%;
-  height: 38px;
+  height: 32px;
   margin: 10px 0 14px;
-  padding: var(--squad-space-sm) var(--squad-space-lg);
+  padding: 0 8px;
   box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--squad-radius-lg);
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
   outline: none;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
-  font-size: var(--squad-text-md);
+  font-size: 14px;
+  line-height: 22px;
 }
 
 .builderSearch:focus {
@@ -1503,7 +1509,7 @@
 }
 
 .builderSearch::placeholder {
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-dimmed);
 }
 
 .assistantPickList,
@@ -1902,24 +1908,33 @@
   line-height: 17px;
 }
 
+/* The Harness's own field geometry, taken from its `Input` primitive: 32px
+ * tall, a half-pixel border at level 4, an 8px radius, 14px text, and a dimmed
+ * placeholder. Every one of those was different here — 36px tall, a full pixel
+ * at level 2, an inherited size — which is what makes a form look like a
+ * different application even when it uses the same colours.
+ *
+ * `select` and `textarea` share it, so a form does not mix two field heights. */
 .input {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--squad-radius-md);
+  height: 32px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 8px;
   outline: none;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
-  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
 }
 
-.input {
-  min-height: 36px;
-  padding: var(--squad-space-sm) var(--squad-space-md);
-}
-
+/* A text box is as tall as its content, so it opts out of the fixed height. */
 textarea.input {
+  height: auto;
+  min-height: 64px;
+  padding: 6px 8px;
   resize: vertical;
 }
 
@@ -1928,7 +1943,7 @@ textarea.input {
 }
 
 .input::placeholder {
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-dimmed);
 }
 
 .checkboxRow {
@@ -1965,9 +1980,19 @@ textarea.input {
   cursor: pointer;
 }
 
-.skillOption input {
+/* The Harness accentiert its own checkboxes this way — a fixed 16px box at the
+ * brand fill. A checkbox left unstyled is the browser's blue in both themes,
+ * which is the one colour the palette never uses. */
+.skillOption input,
+.checkboxRow input,
+.bundleModeOption input,
+.ruleDocumentMain input {
   flex: 0 0 auto;
-  margin-top: 3px;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  accent-color: var(--dsw-alias-button-primary-fill);
+  cursor: pointer;
 }
 
 .skillOptionText {
@@ -2328,13 +2353,16 @@ textarea.input {
 
 .memberTab {
   flex: none;
-  height: 38px;
+  /* The Harness's md button: 36px tall, an 18px capsule. It has to be md rather
+   * than sm because the 28px avatar sits inside it — at 28px the avatar's own
+   * height leaves no room for the border. */
+  height: 36px;
   display: inline-flex;
   align-items: center;
-  gap: var(--squad-space-sm);
-  padding: var(--squad-space-xs) var(--squad-space-lg) var(--squad-space-xs) var(--squad-space-xs);
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--squad-radius-lg);
+  gap: 6px;
+  padding: 0 12px 0 4px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 18px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
   font: inherit;
@@ -2459,12 +2487,6 @@ textarea.input {
   align-items: center;
   gap: var(--squad-space-sm);
   margin-left: auto;
-}
-
-.manageButton {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--squad-radius-md);
-  background: var(--dsw-alias-bg-layer-2);
 }
 
 .workbenchError {
@@ -2728,11 +2750,11 @@ textarea.input {
   box-sizing: border-box;
   cursor: pointer;
   width: calc(100% + 4px);
-  height: 42px;
+  height: 36px;
   color: var(--dsw-alias-label-primary);
   background: 0 0;
   border: none;
-  border-radius: var(--squad-radius-lg);
+  border-radius: 18px;
   flex: none;
   align-items: center;
   gap: var(--squad-space-sm);
@@ -3453,13 +3475,13 @@ textarea.input {
 
 .memberComposerSend {
   flex: none;
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   padding: 0;
   border: none;
-  border-radius: var(--squad-radius-pill);
+  border-radius: 14px;
   background: var(--dsw-alias-button-info-fill);
   color: var(--dsw-alias-label-primary-inverted);
   cursor: pointer;

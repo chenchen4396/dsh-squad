@@ -5,10 +5,10 @@ import { assembleContextFor, type AgentHandle } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
-import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Config } from '../config.js'
+import { AssistantDraftStore } from './assistant-builder-drafts.js'
+import { registerAssistantBuilderTools } from './assistant-builder-tools.js'
 import { AgentTeamError } from '../domain/errors.js'
-import type { CreateAssistantInput } from '../domain/types.js'
 import type { AgentTeamService } from '../service/agent-team-service.js'
 import type {
   AssistantBuilderModelPreferenceStore,
@@ -55,11 +55,6 @@ interface AssistantBuilderConfiguration {
   permissionPresetId: string
 }
 
-interface PendingAssistantDraft {
-  input: CreateAssistantInput
-  preparedThroughSeq: number
-}
-
 export class AssistantBuilderRuntime {
   private handle: AgentHandle | undefined
   private starting: Promise<AgentHandle> | undefined
@@ -68,7 +63,7 @@ export class AssistantBuilderRuntime {
   private activeSessionId: string | undefined
   private configuration: AssistantBuilderConfiguration | undefined
   private readonly configurations = new Map<string, AssistantBuilderConfiguration>()
-  private readonly pendingDrafts = new Map<string, PendingAssistantDraft>()
+  private readonly drafts = new AssistantDraftStore()
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private readonly disposeStatusListener: () => void
   private readonly disposeConversationListener: () => void
@@ -247,7 +242,7 @@ export class AssistantBuilderRuntime {
       this.configuration = undefined
     }
     this.configurations.delete(sessionId)
-    this.pendingDrafts.delete(sessionId)
+    this.drafts.clear(sessionId)
   }
 
   async dispose(): Promise<void> {
@@ -397,7 +392,11 @@ export class AssistantBuilderRuntime {
       agentCtx.tools.guard(execution => allowedTools.has(execution.name)
         ? undefined
         : 'The built-in Assistant Builder may only read its catalog, prepare a draft, and commit an explicitly confirmed draft.')
-      this.registerTools(agentCtx, rawSessionId)
+      registerAssistantBuilderTools(agentCtx, rawSessionId, {
+        service: this.service,
+        drafts: this.drafts,
+        assertIdentity: (id, target) => { this.assertToolIdentity(id, target) },
+      })
       const deniedTools = agentCtx.tools.schemas(agent)
         .map(tool => tool.name)
         .filter(name => !allowedTools.has(name))
@@ -554,183 +553,6 @@ export class AssistantBuilderRuntime {
       .some(archivedSessionId => String(archivedSessionId) === sessionId)
   }
 
-  private registerTools(agentCtx: Context, sessionId: string): void {
-    agentCtx.tools.register(defineTool({
-      name: 'assistant_builder_get_catalog',
-      description: 'Read exact creation options. Pass provider and model after choosing a model to read its reasoning efforts. Pass agentPresetId to read its Skills and MCP Servers.',
-      parameters: {
-        provider: { type: 'string', description: 'Chosen Provider id; pass together with model.' },
-        model: { type: 'string', description: 'Chosen model id; pass together with provider.' },
-        agentPresetId: { type: 'string', description: 'Chosen Agent Preset id used to discover available Skills and MCP Servers.' },
-      },
-      output: {
-        schema: { type: 'object', additionalProperties: true },
-        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
-      },
-      execute: async (args, exec) => {
-        this.assertToolIdentity(exec.agent?.id, sessionId)
-        const catalog = await this.service.catalog()
-        const skillCatalog = args.agentPresetId === undefined
-          ? undefined
-          : await this.service.skillCatalog(args.agentPresetId)
-        const mcpCatalog = args.agentPresetId === undefined
-          ? undefined
-          : await this.service.mcpCatalog(args.agentPresetId)
-        if ((args.provider === undefined) !== (args.model === undefined)) {
-          throw new AgentTeamError('INVALID_REQUEST', 'Provider and model must be supplied together')
-        }
-        const modelCapabilities = args.provider === undefined || args.model === undefined
-          ? undefined
-          : await this.service.modelCapabilities(args.provider, args.model)
-        return {
-          providers: catalog.providers.map(provider => ({ id: provider.id, name: provider.name })),
-          models: catalog.models,
-          agentPresets: catalog.agentPresets.filter(preset => preset.broken === undefined),
-          permissionPresets: catalog.permissionPresets.map(preset => ({
-            value: preset.value,
-            name: preset.name,
-            ...(preset.description === undefined ? {} : { description: preset.description }),
-          })),
-          existingAssistants: this.service.listAssistants().items.map(assistant => assistant.name),
-          ...(modelCapabilities === undefined ? {} : {
-            modelCapabilities: {
-              provider: modelCapabilities.provider,
-              model: modelCapabilities.model,
-              ...(modelCapabilities.reasoning === undefined ? {} : {
-                reasoning: {
-                  efforts: modelCapabilities.reasoning.efforts.map(effort => ({ ...effort })),
-                  ...(modelCapabilities.reasoning.defaultEffort === undefined
-                    ? {}
-                    : { defaultEffort: modelCapabilities.reasoning.defaultEffort }),
-                },
-              }),
-            },
-          }),
-          ...(skillCatalog === undefined ? {} : { skills: skillCatalog.skills }),
-          ruleDocuments: this.service.listRuleDocuments().items.map(document => ({
-            id: document.id,
-            title: document.title,
-            fileName: document.fileName,
-          })),
-          ...(mcpCatalog === undefined ? {} : {
-            mcpServers: mcpCatalog.servers.map(server => ({
-              name: server.name,
-              toolCount: server.tools.length,
-              tools: server.tools,
-            })),
-          }),
-        }
-      },
-    }))
-    agentCtx.tools.register(defineTool({
-      name: 'assistant_builder_prepare',
-      description: 'Validate and temporarily store one complete assistant draft. Replaces any older draft; this tool does not create the assistant.',
-      parameters: {
-        name: { type: 'string', required: true, description: 'Unique, user-facing assistant name.' },
-        description: { type: 'string', description: 'Short user-facing purpose.' },
-        instructions: { type: 'string', required: true, description: 'Stable responsibilities, constraints, workflow, and acceptance rules.' },
-        provider: { type: 'string', required: true },
-        model: { type: 'string', required: true },
-        reasoningEffort: {
-          type: 'string',
-          description: 'Optional exact reasoning effort id returned by modelCapabilities. Omit to use the model default.',
-        },
-        agentPresetId: { type: 'string', required: true },
-        permissionPresetId: { type: 'string', required: true },
-        skills: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Exact Skill names explicitly selected by the user from the chosen preset catalog.',
-        },
-        mcpServers: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Exact MCP Server names explicitly selected by the user from the chosen preset catalog.',
-        },
-        ruleDocuments: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Exact rule document ids explicitly selected by the user from the imported rule document catalog.',
-        },
-      },
-      output: {
-        schema: { type: 'object', additionalProperties: true },
-        render: (_args, value) => [{
-          type: 'text',
-          text: `草稿“${value.name}”已校验。请展示最终配置，并等待用户在新的消息中明确同意创建；用户可使用自然语言表达，无需固定口令。`,
-        }],
-      },
-      execute: async (args, exec) => {
-        this.assertToolIdentity(exec.agent?.id, sessionId)
-        if (exec.agent === undefined) {
-          throw new AgentTeamError('INVALID_REQUEST', 'Assistant Builder Agent is unavailable')
-        }
-        const input = await this.service.validateAssistantDraft({
-          name: args.name,
-          ...(args.description === undefined ? {} : { description: args.description }),
-          instructions: args.instructions,
-          provider: args.provider,
-          model: args.model,
-          ...(args.reasoningEffort === undefined ? {} : { reasoningEffort: args.reasoningEffort }),
-          agentPresetId: args.agentPresetId,
-          permissionPresetId: args.permissionPresetId,
-          skillAllowlist: args.skills ?? [],
-          mcpServers: args.mcpServers ?? [],
-          ruleDocumentAllowlist: args.ruleDocuments ?? [],
-        })
-        this.pendingDrafts.set(sessionId, {
-          input,
-          preparedThroughSeq: exec.agent.session.snapshotEvents().at(-1)?.seq ?? -1,
-        })
-        return {
-          name: input.name,
-          requiresExplicitUserConfirmation: true,
-        }
-      },
-    }))
-    agentCtx.tools.register(defineTool({
-      name: 'assistant_builder_commit',
-      description: 'Create the currently prepared assistant only after a later, real user message clearly approves the final configuration. Natural-language approval is allowed; ambiguity, rejection, questions, or requested changes are not approval.',
-      parameters: {},
-      output: {
-        schema: {
-          type: 'object',
-          properties: {
-            id: { type: 'string', required: true },
-            name: { type: 'string', required: true },
-            revision: { type: 'number', required: true },
-          },
-          additionalProperties: false,
-        },
-        render: (_args, value) => [{ type: 'text', text: `助手“${value.name}”已创建。` }],
-      },
-      execute: async (_args, exec) => {
-        this.assertToolIdentity(exec.agent?.id, sessionId)
-        if (exec.agent === undefined) {
-          throw new AgentTeamError('INVALID_REQUEST', 'Assistant Builder Agent is unavailable')
-        }
-        const pending = this.pendingDrafts.get(sessionId)
-        if (pending === undefined) {
-          throw new AgentTeamError(
-            'INVALID_REQUEST',
-            '没有等待确认的助手草稿，请先重新校验草稿',
-          )
-        }
-        if (!hasFreshAssistantDraftUserResponse(
-          exec.agent.session.snapshotEvents(),
-          pending.preparedThroughSeq,
-        )) {
-          throw new AgentTeamError(
-            'INVALID_REQUEST',
-            '必须等待用户在新的消息中明确同意当前助手配置',
-          )
-        }
-        const assistant = await this.service.createAssistant(pending.input)
-        if (this.pendingDrafts.get(sessionId) === pending) this.pendingDrafts.delete(sessionId)
-        return { id: assistant.id, name: assistant.name, revision: assistant.revision }
-      },
-    }))
-  }
 
   private assertToolIdentity(id: unknown, sessionId: string): void {
     if (String(id) !== sessionId || !isAssistantBuilderSessionId(sessionId)) {
@@ -764,17 +586,6 @@ export class AssistantBuilderRuntime {
   }
 }
 
-export function hasFreshAssistantDraftUserResponse(
-  events: readonly SessionEvent[],
-  preparedThroughSeq: number,
-): boolean {
-  const latestUserMessage = events.findLast(event => (
-    event.seq > preparedThroughSeq
-    && event.type === 'user/message'
-    && event.data.source.kind === 'user'
-  ))
-  return latestUserMessage?.type === 'user/message'
-}
 
 function isAssistantBuilderSessionId(sessionId: string): boolean {
   return sessionId === ASSISTANT_BUILDER_SESSION_ID

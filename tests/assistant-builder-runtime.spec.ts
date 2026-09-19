@@ -4,8 +4,8 @@ import type { Config } from '../src/config.js'
 import type { AssistantBuilderModelReference } from '../src/storage/assistant-builder-preferences.js'
 import {
   AssistantBuilderRuntime,
-  hasFreshAssistantDraftUserResponse,
-} from '../src/runtime/assistant-builder-runtime.js'
+  } from '../src/runtime/assistant-builder-runtime.js'
+import { hasFreshAssistantDraftUserResponse } from '../src/runtime/assistant-builder-tools.js'
 
 const config: Config = {
   maxRequestBytes: 128 * 1024,

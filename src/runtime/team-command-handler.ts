@@ -23,6 +23,11 @@ interface TeamCommandPort {
     slotId: string,
     message: UserMessage,
   ) => void
+  /**
+   * Give one member a Session with no history, so the task about to be
+   * delivered is worked on without the memory of everything before it.
+   */
+  freshContext: (teamId: string, conversationId: string, slotId: string) => Promise<void>
 }
 
 export class TeamCommandHandler {
@@ -67,6 +72,7 @@ export class TeamCommandHandler {
      * Everyone named on the task is woken with it, so a task given to several
      * members is worked on by all of them instead of waiting on one owner.
      */
+    await this.startTasksFresh(teamId, conversationId, owners, dependencyIds, creatorSlotId)
     const assignments = owners
       .filter(slotId => slotId !== creatorSlotId)
       .map(slotId => createTaskDispatchMessage({
@@ -175,6 +181,11 @@ export class TeamCommandHandler {
     /** Owners the leader just added; each one is woken with the task. */
     const addedOwners = (nextOwners ?? []).filter(slotId =>
       slotId !== callerSlotId && !currentOwners.includes(slotId))
+    if (addedOwners.length > 0) {
+      await this.startTasksFresh(
+        teamId, conversationId, addedOwners, task.dependencyIds ?? [], callerSlotId,
+      )
+    }
     const assignments = addedOwners.map(slotId => createTaskDispatchMessage({
       team,
       conversationId,
@@ -281,6 +292,33 @@ export class TeamCommandHandler {
       )
     }
     return dependencyIds
+  }
+
+  /**
+   * Start the given members on tasks that stand alone.
+   *
+   * A task that names no prerequisite is a new piece of work, not a
+   * continuation: it gets a Session with no history, so the member reasons from
+   * the task instead of from everything it happens to remember. A task that
+   * does name a prerequisite is a continuation or a rework — the member already
+   * did the work it depends on, and losing that memory would lose the details
+   * the rework is about.
+   *
+   * Only members taking on a task now are rotated. Editing a task that a member
+   * is already working on must not change the ground under it.
+   */
+  private async startTasksFresh(
+    teamId: string,
+    conversationId: string,
+    owners: readonly string[],
+    dependencyIds: readonly string[],
+    creatorSlotId: string,
+  ): Promise<void> {
+    if (dependencyIds.length > 0) return
+    for (const slotId of new Set(owners)) {
+      if (slotId === creatorSlotId) continue
+      await this.port.freshContext(teamId, conversationId, slotId)
+    }
   }
 
   async sendMemberMessage(    teamId: string,

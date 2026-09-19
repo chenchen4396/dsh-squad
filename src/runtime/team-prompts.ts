@@ -78,6 +78,7 @@ export const TASK_AUTHORING_SPEC = [
   '验收：(optional — the criteria a reviewer will judge by)',
   'Keep those labels and their order. Add detail under a section as numbered points rather than as one long paragraph, and Markdown is welcome.',
   'A real prerequisite must ALSO be named in team_create_task dependencyIds: the description is for the reader, but `dependencyIds` is what the board and the task graph act on. A task that waits on another and does not say so will be drawn and dispatched as if it could start immediately.',
+  'dependencyIds also decides whether the owner keeps its context: a task that names a prerequisite continues in the same Session, because the member already did the work it builds on; a task that names none starts the owner on a Session with no history. So a rework MUST name the task it reworks, or the member loses every detail of the work it is being asked to redo.',
 ].join('\n')
 
 export function memberPrompt(

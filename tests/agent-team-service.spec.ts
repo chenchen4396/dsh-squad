@@ -733,6 +733,7 @@ describe('AgentTeamService', () => {
     const { conversationId } = await ownLeader(agents, service, team.id, leaderAgent)
     await ownMember(service, teamRuntime, team.id, member.id, memberAgent, conversationId)
 
+    const before = service.getConversation(team.id, conversationId).memberSessions[member.id]
     const created = await runtime.commands.createTask(team.id, conversationId, team.leaderSlotId, {
       title: 'Implement parser',
       description: 'Add the parser implementation.',
@@ -740,8 +741,18 @@ describe('AgentTeamService', () => {
       fileScopes: ['src/parser.ts'],
     })
 
-    expect(created).toMatchObject({ status: 'assigned', deliveryState: 'delivered' })
-    expect(memberAgent.followup).toHaveBeenCalledOnce()
+    // A task naming no prerequisite starts its owner on a Session with no
+    // history, so the Agent that was online before is gone and the assignment
+    // waits for the fresh one to come up.
+    expect(created).toMatchObject({ status: 'assigned', deliveryState: 'queued' })
+    const freshAgent = await reOwnMember(service, teamRuntime, team.id, member.id, conversationId)
+    const after = service.getConversation(team.id, conversationId).memberSessions[member.id]
+    expect(after).not.toBe(before)
+
+    // Delivery is the dispatcher's to retry, and the fresh Session is what it
+    // now finds.
+    expect(await runtime.messages.deliver(team.id, Object.keys(service.getTeam(team.id).outbox)[0]!)).toBe(true)
+    expect(freshAgent.followup).toHaveBeenCalledOnce()
     expect(Object.keys(service.getTeam(team.id).outbox)).toHaveLength(0)
     const assignment = service.listMessages(team.id).items[0]!
     expect(assignment).toMatchObject({
@@ -1062,6 +1073,82 @@ describe('AgentTeamService', () => {
     expect(service.getTeam(team.id).tasks[implement.taskId]?.dependencyIds).toEqual([])
   })
 
+  it('continues a member Session for a task that names a prerequisite, and replaces it for one that does not', async () => {
+    const { ctx, service, store, agents } = createHarness()
+    const assistant = await service.createAssistant(assistantInput())
+    const draft = await service.createTeamDraft({
+      name: 'Memory Team',
+      members: [
+        { assistantId: assistant.id, role: 'leader' },
+        { assistantId: assistant.id, role: 'member' },
+      ],
+    })
+    await store.updateTeam(draft.id, team => ({ ...team, state: 'active' }))
+    const team = service.getTeam(draft.id)
+    const member = Object.values(team.members).find(value => value.role === 'member')!
+    const teamRuntime = new TeamRuntime(ctx, config, service)
+    const runtime = runtimeInternals(teamRuntime)
+    await ownLeader(agents, service, team.id, fakeAgent())
+    const { conversationId } = await ownMember(service, teamRuntime, team.id, member.id, fakeAgent())
+    const sessionOf = (): string | undefined =>
+      service.getConversation(team.id, conversationId).memberSessions[member.id]
+
+    // An independent task is a new piece of work: the member starts from the
+    // task alone, without everything it happens to remember.
+    const standalone = await runtime.commands.createTask(team.id, conversationId, team.leaderSlotId, {
+      title: 'One-off audit',
+      ownerSlotId: member.id,
+    })
+    const afterStandalone = sessionOf()
+    expect(afterStandalone).not.toBe(undefined)
+
+    // A task that names a prerequisite is a continuation or a rework: the
+    // member already did the work it depends on, so it keeps its Session.
+    await reOwnMember(service, teamRuntime, team.id, member.id, conversationId)
+    await runtime.commands.createTask(team.id, conversationId, team.leaderSlotId, {
+      title: 'Rework the audit',
+      ownerSlotId: member.id,
+      dependencyIds: [standalone.taskId],
+    })
+    expect(sessionOf()).toBe(afterStandalone)
+
+    // Another independent task replaces it again.
+    await reOwnMember(service, teamRuntime, team.id, member.id, conversationId)
+    await runtime.commands.createTask(team.id, conversationId, team.leaderSlotId, {
+      title: 'Unrelated second audit',
+      ownerSlotId: member.id,
+    })
+    expect(sessionOf()).not.toBe(afterStandalone)
+  })
+
+  it('never rotates the leader, which is the Session the user is talking to', async () => {
+    const { ctx, service, store, agents } = createHarness()
+    const assistant = await service.createAssistant(assistantInput())
+    const draft = await service.createTeamDraft({
+      name: 'Leader Team',
+      members: [
+        { assistantId: assistant.id, role: 'leader' },
+        { assistantId: assistant.id, role: 'member' },
+      ],
+    })
+    await store.updateTeam(draft.id, team => ({ ...team, state: 'active' }))
+    const team = service.getTeam(draft.id)
+    const member = Object.values(team.members).find(value => value.role === 'member')!
+    const teamRuntime = new TeamRuntime(ctx, config, service)
+    const runtime = runtimeInternals(teamRuntime)
+    const { conversationId } = await ownLeader(agents, service, team.id, fakeAgent())
+    await ownMember(service, teamRuntime, team.id, member.id, fakeAgent(), conversationId)
+    const leaderSession = service.getConversation(team.id, conversationId).sessionId
+
+    // A task the leader assigned to itself must not swap the reader's own
+    // Session out from under the conversation they are looking at.
+    await runtime.commands.createTask(team.id, conversationId, team.leaderSlotId, {
+      title: 'Leader keeps its own context',
+      ownerSlotId: team.leaderSlotId,
+    })
+    expect(service.getConversation(team.id, conversationId).sessionId).toBe(leaderSession)
+  })
+
   it('wakes every owner of a shared task so they work on it in parallel', async () => {
     const { ctx, service, store, agents } = createHarness()
     const assistant = await service.createAssistant(assistantInput())
@@ -1091,9 +1178,17 @@ describe('AgentTeamService', () => {
       ownerSlotIds: [first!.id, second!.id],
     })
 
-    expect(created).toMatchObject({ status: 'assigned', deliveryState: 'delivered' })
-    expect(firstAgent.followup).toHaveBeenCalledOnce()
-    expect(secondAgent.followup).toHaveBeenCalledOnce()
+    // Neither owner names a prerequisite, so both start on a fresh Session and
+    // their assignments wait for those Sessions to come up.
+    expect(created).toMatchObject({ status: 'assigned', deliveryState: 'queued' })
+    const freshFirst = await reOwnMember(service, teamRuntime, team.id, first!.id, conversationId)
+    const freshSecond = await reOwnMember(service, teamRuntime, team.id, second!.id, conversationId)
+    for (const messageId of Object.keys(service.getTeam(team.id).outbox)) {
+      expect(await runtime.messages.deliver(team.id, messageId)).toBe(true)
+    }
+    expect(freshFirst.followup).toHaveBeenCalledOnce()
+    expect(freshSecond.followup).toHaveBeenCalledOnce()
+    expect(firstAgent.followup).not.toHaveBeenCalled()
     expect(Object.keys(service.getTeam(team.id).outbox)).toHaveLength(0)
     expect(Object.values(service.getTeam(team.id).tasks)[0]?.ownerSlotIds)
       .toEqual([first!.id, second!.id])
@@ -1141,19 +1236,17 @@ describe('AgentTeamService', () => {
       ownerSlotId: member.id,
     })
 
+    // The owner starts on a fresh Session, so the assignment waits rather than
+    // failing against the Agent that was disposed with the old one.
     expect(created.deliveryState).toBe('queued')
     expect(Object.keys(service.getTeam(team.id).outbox)).toHaveLength(1)
-    expect(service.listMessages(team.id).items[0]?.deliveryState).toBe('failed')
+    expect(service.listMessages(team.id).items[0]?.deliveryState).toBe('queued')
+    expect(memberAgent.followup).not.toHaveBeenCalled()
 
-    memberAgent.followup.mockImplementation(message => {
-      memberAgent.session.events.push({
-        type: 'agent/inbox/spliced',
-        data: { inserted: [message] },
-      })
-    })
+    const freshAgent = await reOwnMember(service, teamRuntime, team.id, member.id, conversationId)
     await runtime.messages.recover(service.getTeam(team.id))
 
-    expect(memberAgent.followup).toHaveBeenCalledTimes(2)
+    expect(freshAgent.followup).toHaveBeenCalledOnce()
     expect(Object.keys(service.getTeam(team.id).outbox)).toHaveLength(0)
     expect(service.listMessages(team.id).items[0]?.deliveryState).toBe('delivered')
   })
@@ -1764,11 +1857,13 @@ async function assignSession(
   teamId: string,
   slotId: string,
   conversationId?: string,
+  sessionId?: string,
 ): Promise<{ conversationId: string; sessionId: string }> {
   const conversation = conversationId === undefined
     ? await activeConversation(service, teamId)
     : service.getConversation(teamId, conversationId)
   const existing = conversation.memberSessions[slotId]
+  if (sessionId !== undefined) return { conversationId: conversation.id, sessionId }
   if (existing !== undefined) return { conversationId: conversation.id, sessionId: existing }
   const assigned = await service.assignMemberSessions(teamId, conversation.id, {
     [slotId]: `agent-team:${randomUUID()}`,
@@ -1784,8 +1879,9 @@ async function ownMember(
   slotId: string,
   agent: FakeAgent = fakeAgent(),
   conversationId?: string,
-): Promise<{ conversationId: string; sessionId: string }> {
-  const assigned = await assignSession(service, teamId, slotId, conversationId)
+  sessionId?: string,
+): Promise<{ conversationId: string; sessionId: string; agent: FakeAgent }> {
+  const assigned = await assignSession(service, teamId, slotId, conversationId, sessionId)
   // The published Agent and its Session always share one id, which is what the
   // runtime keys ownership and its interaction scope by.
   agent.id = assigned.sessionId
@@ -1797,7 +1893,25 @@ async function ownMember(
     handle: { agent, dispose: vi.fn(async () => {}) },
     modelSelection: { current: undefined, assembled: undefined },
   })
-  return assigned
+  return { ...assigned, agent }
+}
+
+/**
+ * A member whose Session was replaced by a fresh-context task must be put back
+ * on stage under its new Session: the harness deliberately refuses to resolve a
+ * member Session through `agents.get`, so a test has to own it explicitly.
+ */
+async function reOwnMember(
+  service: AgentTeamService,
+  runtime: TeamRuntime,
+  teamId: string,
+  slotId: string,
+  conversationId: string,
+  agent: FakeAgent = fakeAgent(),
+): Promise<FakeAgent> {
+  const sessionId = service.getConversation(teamId, conversationId).memberSessions[slotId]!
+  await ownMember(service, runtime, teamId, slotId, agent, conversationId, sessionId)
+  return agent
 }
 
 function assistantInput() {

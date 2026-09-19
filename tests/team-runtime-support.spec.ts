@@ -41,8 +41,12 @@ describe('team runtime support', () => {
       expect(leaderPrompt).toContain(label)
     }
     // The description is for the reader; dependencyIds is what the board acts
-    // on, so the prompt has to say both.
+    // on, so the prompt has to say both — and that it also decides whether the
+    // owner keeps its context.
     expect(leaderPrompt).toContain('dependencyIds')
+    expect(leaderPrompt).toContain('continues in the same Session')
+    expect(leaderPrompt).toContain('Session with no history')
+    expect(leaderPrompt).toContain('a rework MUST name the task it reworks')
     expect(leaderPrompt).toContain('will be drawn and dispatched as if it could start immediately')
 
     // A member is told to write tasks, not how to author them.

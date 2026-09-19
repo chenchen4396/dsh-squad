@@ -135,6 +135,8 @@ export class TeamRuntime {
         this.requireAgentIn(this.service.getConversation(teamId, conversationId), slotId)
           .followup(message)
       },
+      freshContext: (teamId, conversationId, slotId) =>
+        this.freshMemberContext(teamId, conversationId, slotId),
     })
     this.interactions = new TeamInteractionBridge(ctx, {
       // Members are this plugin's to answer. The Leader is the Session's own
@@ -785,6 +787,37 @@ export class TeamRuntime {
 
   startTeam(teamId: string): Promise<TeamAggregate> {
     return this.exclusive(teamId, () => this.startTeamUnlocked(teamId))
+  }
+
+  /**
+   * Give one member a Session with no history, replacing the one it had.
+   *
+   * The old Session is retired and its Agent disposed, so the next task cannot
+   * reach even a cached context; the id is kept in `retiredSessions` so the
+   * work that happened there stays accounted for. A member that never had a
+   * Session here is simply brought online — there is nothing to forget.
+   */
+  freshMemberContext(teamId: string, conversationId: string, slotId: string): Promise<void> {
+    return this.exclusive(teamId, async () => {
+      const team = this.service.getTeam(teamId)
+      const member = team.members[slotId]
+      if (member === undefined) throw new AgentTeamError('MEMBER_NOT_FOUND', `Unknown member '${slotId}'`)
+      if (slotId === team.leaderSlotId) return
+      let conversation = this.service.getConversation(teamId, conversationId)
+      const previous = conversation.memberSessions[slotId]
+      if (previous !== undefined) {
+        await this.service.forgetMemberSessions(teamId, slotId)
+        conversation = await this.service.assignMemberSessions(teamId, conversationId, {
+          [slotId]: `agent-team:${randomUUID()}`,
+        })
+        const active = this.owned.get(previous)
+        if (active !== undefined) {
+          this.owned.delete(previous)
+          await active.handle.dispose().catch(() => undefined)
+        }
+      }
+      await this.ensureConversationOnline(teamId, conversation.id)
+    })
   }
 
   activateMember(teamId: string, slotId: string): Promise<TeamAggregate> {

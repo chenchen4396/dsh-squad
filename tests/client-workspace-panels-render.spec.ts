@@ -122,3 +122,21 @@ describe('workspace panels render', () => {
     expect(text(html)).toContain('MdeModulePkg')
   })
 })
+
+describe('the diff overlay', () => {
+  it('says it is reading the diff before it has one', async () => {
+    const { WorkspaceDiffDialog } = await import('../src/client/workspace/WorkspaceDiffDialog.js')
+    const html = render(createElement(WorkspaceDiffDialog, {
+      target: {
+        change: { path: 'MdeModulePkg/X.inf', kind: 'modified', staged: false, unstaged: true },
+        scope: 'unstaged',
+      },
+      teamId: 't1',
+      conversationId: undefined,
+      layout: 'unified',
+      onClose: () => {},
+    } as never))
+    // The overlay opens on the change it was asked for, not on a blank frame.
+    expect(text(html)).toContain('MdeModulePkg/X.inf')
+  })
+})

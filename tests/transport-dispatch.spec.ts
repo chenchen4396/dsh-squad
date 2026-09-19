@@ -50,6 +50,14 @@ function stubService(): AgentTeamService {
     exportBundle: vi.fn(() => 'bundle'),
     importBundle: vi.fn(async () => 'imported-bundle'),
     listMessages: vi.fn(() => 'messages'),
+    getRoom: vi.fn(async () => 'room'),
+    getOlderMemberConversation: vi.fn(async () => 'older'),
+    listConversations: vi.fn(() => 'conversations'),
+    bindSession: vi.fn(async () => 'bound'),
+    unbindSession: vi.fn(async () => undefined),
+    setSessionDelegation: vi.fn(async () => 'delegated'),
+    respondToInteraction: vi.fn(async () => 'answered'),
+    findConversationBySession: vi.fn(() => undefined),
     sendRoomMessage: vi.fn(async () => 'room-message'),
     sendUserMessage: vi.fn(async () => 'user-message'),
     getRoom: vi.fn(async () => 'room'),
@@ -106,6 +114,36 @@ describe('dispatch routing', () => {
     const service = stubService()
     await call(service, 'assistant.builder.draft.configure', { provider: 'p', model: 'm' })
     expect(service.configureAssistantBuilderDraft).toHaveBeenCalledWith('p', 'm')
+  })
+
+  it('routes every conversation method to its own call', async () => {
+    const service = stubService()
+    await call(service, 'team.message.list', { id: 't1' })
+    await call(service, 'team.message.send', { teamId: 't1', content: 'hi', conversationId: 'c1' })
+    await call(service, 'team.workbench.get', { id: 't1', conversationId: 'c1' })
+    await call(service, 'team.workbench.older', { id: 't1', conversationId: 'c1', slotId: 's1', beforeSeq: 3 })
+    expect(await call(service, 'team.session.get', { sessionId: 'session-1' }))
+      .toEqual({ sessionId: 'session-1' })
+    await call(service, 'team.session.bind', { sessionId: 'session-1', teamId: 't1' })
+    expect(service.bindSession).toHaveBeenCalledWith('session-1', 't1')
+    await call(service, 'team.session.unbind', { sessionId: 'session-1' })
+    await call(service, 'team.session.delegate', { sessionId: 'session-1', delegate: true })
+    await call(service, 'team.conversation.list', { teamId: 't1' })
+    await call(service, 'team.room.get', { teamId: 't1', conversationId: 'c1' })
+    await call(service, 'team.room.older', { teamId: 't1', conversationId: 'c1', beforeTime: 10 })
+    await call(service, 'team.room.send', { teamId: 't1', content: 'hi', conversationId: 'c1' })
+
+    // The largest table, and the one where a copy-paste slip would be least
+    // visible: every entry must reach a different service call.
+    expect(service.listMessages).toHaveBeenCalledWith('t1')
+    expect(service.sendUserMessage).toHaveBeenCalledWith('t1', 'c1', 'hi', undefined)
+    expect(service.getWorkbench).toHaveBeenCalledWith('t1', 'c1')
+    expect(service.getOlderMemberConversation).toHaveBeenCalledWith('t1', 'c1', 's1', 3)
+    expect(service.unbindSession).toHaveBeenCalledWith('session-1')
+    expect(service.setSessionDelegation).toHaveBeenCalledWith('session-1', true)
+    expect(service.listConversations).toHaveBeenCalledWith('t1')
+    expect(service.getRoom).toHaveBeenCalledWith('t1', 'c1')
+    expect(service.sendRoomMessage).toHaveBeenCalledWith('t1', 'hi', 'c1', [])
   })
 
   it('routes the team methods', async () => {

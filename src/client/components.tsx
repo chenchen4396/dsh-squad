@@ -7,6 +7,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsSectionOwnerProps } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { AssistantPanel } from './assistants/AssistantPanel.js'
+import { BundlePanel } from './assistants/BundlePanel.js'
 import {
   callAgentTeam,
   subscribeAgentTeam,
@@ -165,6 +166,7 @@ export function AgentTeamSettingsSection(_props: SettingsSectionOwnerProps): JSX
       </div>
       {error && <div role="alert" className={css.error}>{error}</div>}
       <AssistantPanel catalog={catalog} assistants={assistants} onChanged={load} />
+      <BundlePanel />
     </section>
   )
 }

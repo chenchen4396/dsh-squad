@@ -873,6 +873,129 @@ describe('AgentTeamService', () => {
     expect(sent?.relatedTaskId).toBe(task.taskId)
   })
 
+  it('exports configuration to a bundle and reads it back as an independent copy', async () => {
+    const source = createHarness()
+    const assistant = await source.service.createAssistant(assistantInput())
+    const document = await source.service.importRuleDocument('rules/house.md', '# 规范\n\n只改必要的行。')
+    await source.service.updateAssistant(assistant.id, {
+      ruleDocumentAllowlist: [document.id],
+    })
+    const draft = await source.service.createTeamDraft({
+      name: 'Bundle Team',
+      members: [
+        { assistantId: assistant.id, role: 'leader' },
+        { assistantId: assistant.id, role: 'member' },
+      ],
+    })
+    await source.store.updateTeam(draft.id, team => ({ ...team, state: 'active' }))
+    const team = source.service.getTeam(draft.id)
+    const [first, second] = Object.values(team.members)
+    const task = await runtimeInternals(new TeamRuntime(source.ctx, config, source.service)).commands.createTask(
+      team.id, 'conversation-1', first!.id, { title: '先做', ownerSlotId: first!.id },
+    )
+    await runtimeInternals(new TeamRuntime(source.ctx, config, source.service)).commands.createTask(
+      team.id, 'conversation-1', first!.id,
+      { title: '后做', ownerSlotId: second!.id, dependencyIds: [task.taskId] },
+    )
+
+    const bundle = source.service.exportBundle({ teamIds: [team.id] })
+
+    // Configuration only: nothing that describes a running team travels.
+    expect(bundle.format).toBe('dsh-squad/bundle')
+    expect(bundle.assistants).toHaveLength(1)
+    expect(bundle.assistants[0]!.ruleDocumentKeys).toEqual(['rule:rules/house.md'])
+    expect(bundle.ruleDocuments.map(document => document.path)).toEqual(['rules/house.md'])
+    expect(bundle.teams).toHaveLength(1)
+    const exported = bundle.teams[0]!
+    expect(Object.keys(exported.members)).toHaveLength(2)
+    const exportedTasks = Object.values(exported.tasks)
+    expect(exportedTasks.map(item => item.title).sort()).toEqual(['先做', '后做'])
+    // The dependency is expressed as a key inside the file, not a storage id.
+    const later = exportedTasks.find(item => item.title === '后做')!
+    const earlier = exportedTasks.find(item => item.title === '先做')!
+    expect(later.dependencyIds).toEqual([earlier.key])
+
+    // Importing it elsewhere gives a working, independent copy.
+    const target = createHarness()
+    const summary = await target.service.importBundle({ bundle, mode: 'copy' })
+    expect(summary.teamsCreated).toBe(1)
+    expect(summary.assistantsCreated).toBe(1)
+    expect(summary.ruleDocumentsCreated).toBe(1)
+    expect(summary.warnings).toEqual([])
+
+    const importedTeam = target.service.listTeams().items[0]!
+    expect(importedTeam.name).toBe('Bundle Team')
+    expect(importedTeam.id).not.toBe(team.id)
+    expect(importedTeam.state).toBe('draft')
+    // Every id is this instance's own: no record points at the source's storage.
+    expect(Object.keys(importedTeam.members)).toHaveLength(2)
+    for (const member of Object.values(importedTeam.members)) {
+      expect(member.assistantId).not.toBe(assistant.id)
+      expect(importedTeam.members[importedTeam.leaderSlotId]).toBeDefined()
+    }
+    const importedTasks = Object.values(importedTeam.tasks)
+    expect(importedTasks).toHaveLength(2)
+    const importedLater = importedTasks.find(item => item.title === '后做')!
+    const importedEarlier = importedTasks.find(item => item.title === '先做')!
+    expect(importedLater.dependencyIds).toEqual([importedEarlier.id])
+    expect(importedLater.ownerSlotIds.every(owner => importedTeam.members[owner] !== undefined)).toBe(true)
+  })
+
+  it('keeps the same record when importing over what is already here', async () => {
+    const source = createHarness()
+    const assistant = await source.service.createAssistant({ ...assistantInput(), name: 'Shared' })
+    const document = await source.service.importRuleDocument('rules/shared.md', '# 共享')
+    await source.service.updateAssistant(assistant.id, {
+      ruleDocumentAllowlist: [document.id],
+    })
+    const bundle = source.service.exportBundle({})
+
+    const target = createHarness()
+    const first = await target.service.importBundle({ bundle, mode: 'overwrite' })
+    const second = await target.service.importBundle({ bundle, mode: 'overwrite' })
+
+    // Overwrite is for moving a configuration, not for accumulating copies: the
+    // second import recognises what the first one made.
+    expect(first.assistantsCreated).toBe(1)
+    expect(second.assistantsCreated).toBe(0)
+    expect(second.assistantsUpdated).toBe(1)
+    expect(target.service.listAssistants().items).toHaveLength(1)
+    expect(target.service.listRuleDocuments().items).toHaveLength(1)
+    expect(target.service.listAssistants().items[0]!.name).toBe('Shared')
+  })
+
+  it('warns instead of failing when a member names an assistant the file lacks', async () => {
+    const { service } = createHarness()
+    const bundle = {
+      format: 'dsh-squad/bundle',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      assistants: [],
+      ruleDocuments: [],
+      teams: [{
+        name: 'Broken Team',
+        directMemberChat: true,
+        leaderKey: 'member:a',
+        members: {
+          'member:a': { displayName: 'A', role: 'leader', permissionPresetId: 'standard', assistantKey: 'assistant:missing' },
+        },
+        tasks: {},
+      }],
+    }
+    const summary = await service.importBundle({ bundle, mode: 'copy' })
+    // Nothing to import, but the file is understood and the reader is told why.
+    expect(summary.teamsCreated).toBe(0)
+    expect(summary.warnings.join('')).toContain('没有可用的 Leader')
+  })
+
+  it('refuses a bundle that is not one, and names what is wrong', async () => {
+    const { service } = createHarness()
+    await expect(service.importBundle({ bundle: { format: 'something-else' }, mode: 'copy' }))
+      .rejects.toThrow()
+    await expect(service.importBundle({ bundle: { format: 'dsh-squad/bundle', version: 99 } , mode: 'copy' }))
+      .rejects.toThrow()
+  })
+
   it('records task dependencies and refuses ones that cannot be run', async () => {
     const { ctx, service, store, agents } = createHarness()
     const assistant = await service.createAssistant(assistantInput())

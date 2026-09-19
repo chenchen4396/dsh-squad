@@ -4397,3 +4397,89 @@ textarea.input {
 .hint[data-tone='warn'] {
   color: var(--dsw-alias-state-warn-primary);
 }
+
+/* Export and import: a small bar under the assistant library. */
+.bundlePanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--squad-space-sm);
+  margin-top: var(--squad-space-xl);
+  padding-top: var(--squad-space-xl);
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.bundleActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--squad-space-sm);
+}
+
+.bundleHint {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--squad-text-xs);
+  line-height: 1.6;
+}
+
+.bundleSummary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--squad-space-2xs);
+  padding: var(--squad-space-md) var(--squad-space-lg);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-left: 3px solid var(--dsw-alias-state-success-primary);
+  border-radius: var(--squad-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--squad-text-sm);
+}
+
+.bundleSummary strong {
+  color: var(--dsw-alias-label-primary);
+}
+
+.bundleWarning {
+  color: var(--dsw-alias-state-warn-primary);
+  font-size: var(--squad-text-xs);
+}
+
+.bundleImportChoice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--squad-space-lg);
+}
+
+/* One import mode, described as what it does to the reader's data. */
+.bundleModeOption {
+  display: flex;
+  gap: var(--squad-space-sm);
+  align-items: flex-start;
+  padding: var(--squad-space-md);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--squad-radius-md);
+  background: var(--dsw-alias-bg-layer-1);
+  cursor: pointer;
+}
+
+.bundleModeOption[data-selected='true'] {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.bundleModeOption span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--squad-space-3xs);
+  min-width: 0;
+}
+
+.bundleModeOption strong {
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--squad-text-sm);
+}
+
+.bundleModeOption small {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--squad-text-xs);
+  line-height: 1.6;
+}

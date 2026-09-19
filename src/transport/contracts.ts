@@ -1,4 +1,9 @@
 import type {
+  BundleImportSummary,
+  BundleImportMode,
+  SquadBundle,
+} from '../domain/bundle.js'
+import type {
   AddTeamMemberInput,
   AssistantTemplate,
   CloneTeamInput,
@@ -60,6 +65,8 @@ export const AGENT_TEAM_METHODS = [
   'assistant.ruleDocuments.list',
   'assistant.ruleDocuments.get',
   'assistant.ruleDocuments.import',
+  'bundle.export',
+  'bundle.import',
   'assistant.ruleDocuments.delete',
   'team.workspace.list',
   'team.workspace.search',
@@ -547,6 +554,14 @@ export interface AgentTeamRequestMap {
   'assistant.ruleDocuments.import': {
     payload: { path: string; content: string }
     result: RuleDocumentCatalogView
+  }
+  'bundle.export': {
+    payload: { teamIds?: string[] }
+    result: SquadBundle
+  }
+  'bundle.import': {
+    payload: { bundle: SquadBundle; mode: BundleImportMode }
+    result: BundleImportSummary
   }
   'assistant.ruleDocuments.delete': {
     payload: { id: string }

@@ -488,6 +488,18 @@ async function dispatch(service: AgentTeamService, request: AgentTeamRequest): P
       await service.importRuleDocument(payload.path, payload.content)
       return documentCatalog(service)
     }
+    case 'bundle.export': {
+      const payload = z.object({ teamIds: z.array(z.string().trim().min(1)).max(200).optional() })
+        .strict().parse(request.payload)
+      return service.exportBundle(payload)
+    }
+    case 'bundle.import': {
+      // The bundle is validated inside the service, where the failure can name
+      // the field that is wrong instead of the whole body being "invalid".
+      const payload = z.object({ bundle: z.unknown(), mode: z.enum(['copy', 'overwrite']) })
+        .strict().parse(request.payload)
+      return service.importBundle(payload)
+    }
     case 'assistant.ruleDocuments.delete': {
       const payload = z.object({ id: z.string().min(1) }).strict().parse(request.payload)
       await service.deleteRuleDocument(payload.id)

@@ -305,8 +305,9 @@ export function TeamWorkbench({
         <span className={css.manageButtonWrap}>
           {!workspaceVisible && (
             <Button
-              variant="toolbar"
+              variant="ghost"
               size="sm"
+              className={css.manageButton}
               onClick={() => { setWorkspaceVisible(true) }}
             >
               <IconChevronLeftOutline14 size={14} />
@@ -314,8 +315,9 @@ export function TeamWorkbench({
             </Button>
           )}
           <Button
-            variant="toolbar"
+            variant="ghost"
             size="sm"
+            className={css.manageButton}
             onClick={() => {
               setAddMemberOpen(true)
             }}
@@ -323,7 +325,7 @@ export function TeamWorkbench({
             <IconPlusOutline16 size={14} />
             添加助手
           </Button>
-          <Button variant="toolbar" size="sm" onClick={() => { setManagementOpen(value => !value) }}>
+          <Button variant="ghost" size="sm" className={css.manageButton} onClick={() => { setManagementOpen(value => !value) }}>
             {managementOpen ? '收起管理' : '团队管理'}
           </Button>
         </span>

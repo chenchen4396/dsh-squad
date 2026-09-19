@@ -17,6 +17,7 @@ import { AgentTeamError } from '../domain/errors.js'
 import { LiveStreamBuffer } from './live-stream-buffer.js'
 import { decideLeaderAnswer } from './leader-answer.js'
 import { memberAgentSetup } from './member-context.js'
+import { HandoffRelay } from './handoff-relay.js'
 import { subscribeRuntimeEvents } from './runtime-events.js'
 import { installCompositionSections, teamComposition } from './team-composition.js'
 import { MemberRegistry } from './member-registry.js'
@@ -80,9 +81,6 @@ interface OwnedAgent {
  * refused. The Host is one event loop shared with every member's run, so a
  * single failure is usually transient and worth another try.
  */
-const HANDOFF_ATTEMPTS = 3
-/** Backoff between hand-off attempts, growing linearly per attempt. */
-const HANDOFF_RETRY_MS = 500
 
 /**
  * The team composition installed on a Harness Session's own Agent.
@@ -102,13 +100,14 @@ export class TeamRuntime {
   private readonly members = new MemberRegistry()
   /** Team composition installed on a Session Agent, keyed by that session id. */
   private readonly operations = new OperationQueue()
+  /** Handing a member's requests to the Leader, and settling what it cannot. */
+  private readonly handoffRelay: HandoffRelay
   /** Every event subscription this runtime holds, removed together. */
   private subscriptions: () => void = () => {}
   private readonly conversationPublishes = new PublishCoalescer()
   /** Transient live assistant output per member session, keyed by session id. */
   private readonly liveStreams = new LiveStreamBuffer()
   /** Member requests already handed to the Leader, so each is announced once. */
-  private readonly handedRequests = new Set<string>()
   /**
    * Workspace rule text per team, refreshed when a member's selection changes.
    * Prompt sections resolve synchronously, so the file reads happen here.
@@ -152,7 +151,7 @@ export class TeamRuntime {
         // cosmetic, and a failure there must never swallow the hand-off. Each
         // step also contains its own failure for the same reason.
         try {
-          this.handToLeader(sessionId)
+          this.handoffRelay.relay(sessionId)
         } catch (error) {
           ctx.logger.warn('agent-team: handing a member request to the Leader failed', error)
         }
@@ -162,6 +161,15 @@ export class TeamRuntime {
           ctx.logger.warn('agent-team: failed to publish interaction update', error)
         }
       },
+    })
+    this.handoffRelay = new HandoffRelay({
+      ctx,
+      service,
+      commands: this.commands,
+      interactions: this.interactions,
+      members: this.members,
+      resolveAgent: (conversation, slotId) => this.resolveAgentIn(conversation, slotId),
+      options: this.handoff,
     })
     this.subscriptions = subscribeRuntimeEvents(ctx, {
       members: this.members,
@@ -659,7 +667,6 @@ export class TeamRuntime {
     }
   }
 
-
   /**
    * Fail with an actionable message before creating an Agent whose model this
    * deployment cannot route.
@@ -1124,69 +1131,6 @@ export class TeamRuntime {
    * is therefore retried, and a request that still cannot be handed over is
    * refused with a reason the member can act on rather than left waiting.
    */
-  private handToLeader(sessionId: string): void {
-    const pending = new Set(this.interactions.pendingIds())
-    for (const id of [...this.handedRequests]) {
-      if (!pending.has(id)) this.handedRequests.delete(id)
-    }
-    const owned = this.members.agentOf(sessionId)
-    if (owned === undefined) return
-    const team = this.service.getTeam(owned.teamId)
-    const member = team.members[owned.slotId]
-    const leader = this.resolveAgentIn(
-      this.service.getConversation(owned.teamId, owned.conversationId),
-      team.leaderSlotId,
-    )
-    if (member === undefined || leader === undefined) {
-      // Nothing can be handed over right now. Refusing would deny a request the
-      // Leader may well be able to grant once it exists again, so the request
-      // stays pending — but the reason is logged, because a member stuck behind
-      // an unanswerable request looks exactly like one that is still working.
-      this.ctx.logger.warn(
-        `agent-team: member '${owned.slotId}' is waiting, but `
-        + (member === undefined ? 'it is no longer a team member' : 'the Leader is not online'),
-      )
-      return
-    }
-    const leaderMode = this.leaderSandboxMode(owned.teamId, owned.conversationId)
-    // «替我审批»: every request of this conversation is the Leader's to answer,
-    // so none of them may be left waiting for the reader to click.
-    const delegated = this.service.getConversation(owned.teamId, owned.conversationId).delegateInteractions === true
-    for (const interaction of this.interactions.list(sessionId)) {
-      if (this.handedRequests.has(interaction.id)) continue
-      this.handedRequests.add(interaction.id)
-      // A Leader answers only within the access it holds itself: a wider
-      // request is the reader's, and the interface opens it right away.
-      const beyondLeader = interaction.kind === 'approval'
-        && !withinLeaderAuthority(leaderMode, interaction.requestedMode)
-      if (delegated) {
-        this.interactions.markLeaderOnly(interaction.id)
-        // Nobody could grant it either, so it is refused now instead of being
-        // held for a card that will never open.
-        if (beyondLeader) this.interactions.refuse(interaction.id)
-      } else if (beyondLeader) {
-        this.interactions.markUserOnly(interaction.id)
-      }
-      const content = memberRequestContent(member.displayName, interaction, { leaderMode, beyondLeader, delegated })
-      // The member's wait is bounded: a request nobody answers is refused
-      // rather than left to hang, which is the one outcome a member cannot
-      // recover from.
-      this.interactions.armDeadline(
-        interaction.id,
-        this.handoff.answerWindowMs ?? LEADER_ANSWER_TIMEOUT_MS,
-      )
-      void this.deliverHandoff({
-        sessionId,
-        teamId: owned.teamId,
-        conversationId: owned.conversationId,
-        senderSlotId: member.id,
-        recipientSlotId: team.leaderSlotId,
-        content,
-        type: interaction.kind === 'approval' ? 'warning' : 'question',
-        interactionId: interaction.id,
-      })
-    }
-  }
 
   /**
    * Deliver one hand-off, retrying the transient failures a busy Host produces.
@@ -1195,62 +1139,12 @@ export class TeamRuntime {
    * a member waiting on a request nobody will answer is worse than a refusal it
    * can react to — so the request is settled rather than left pending.
    */
-  private async deliverHandoff(handoff: {
-    sessionId: string
-    teamId: string
-    conversationId: string
-    senderSlotId: string
-    recipientSlotId: string
-    content: string
-    type: 'warning' | 'question'
-    interactionId: string
-  }): Promise<void> {
-    let lastError: unknown
-    const attempts = this.handoff.attempts ?? HANDOFF_ATTEMPTS
-    const retryMs = this.handoff.retryMs ?? HANDOFF_RETRY_MS
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      try {
-        await this.commands.sendMemberMessage(
-          handoff.teamId,
-          handoff.conversationId,
-          handoff.senderSlotId,
-          handoff.recipientSlotId,
-          handoff.content,
-          handoff.type,
-        )
-        return
-      } catch (error) {
-        lastError = error
-        await new Promise(resolve => setTimeout(resolve, retryMs * (attempt + 1)))
-      }
-    }
-    this.handedRequests.delete(handoff.interactionId)
-    this.ctx.logger.warn('agent-team: handing a member request to the Leader failed', lastError)
-    this.refuseEvery(handoff.sessionId, `无法把请求转交给 Leader：${String(lastError)}`)
-  }
 
   /**
    * Settle every request one Session is waiting on. Called when no answerer is
    * reachable at all, where leaving the request pending would block the member
    * for good; `reason` goes to the Host log so the cause stays diagnosable.
    */
-  private refuseEvery(sessionId: string, reason: string): void {
-    const waiting = this.interactions.list(sessionId)
-    if (waiting.length === 0) return
-    this.ctx.logger.warn(`agent-team: refusing ${waiting.length} waiting member request(s): ${reason}`)
-    for (const interaction of waiting) {
-      this.handedRequests.delete(interaction.id)
-      this.interactions.refuse(interaction.id)
-    }
-  }
-
-  /** The sandbox level the Leader itself runs at, read from its own Session. */
-  private leaderSandboxMode(teamId: string, conversationId: string): string | undefined {
-    const conversation = this.service.getConversation(teamId, conversationId)
-    if (conversation.sessionId === undefined) return undefined
-    const agent = this.ctx.agents.get(SessionId(conversation.sessionId))
-    return agent === undefined ? undefined : sandboxModeOf(agent.session.snapshotEvents())
-  }
 
   private publishOwnedConversation(sessionId: string): void {
     try {
@@ -1539,8 +1433,6 @@ export class TeamRuntime {
     }
   }
 
-
-
   private assertToolIdentity(
     agent: Agent | undefined,
     teamId: string,
@@ -1648,7 +1540,7 @@ export class TeamRuntime {
           const decision = decideLeaderAnswer({
             pending,
             ...(input.decision === undefined ? {} : { decision: input.decision }),
-            leaderMode: this.leaderSandboxMode(team.id, conversation.id),
+            leaderMode: this.handoffRelay.leaderSandboxMode(team.id, conversation.id),
             delegated: this.service.getConversation(team.id, conversation.id).delegateInteractions === true,
           })
           if (decision.userOnly) this.interactions.markUserOnly(pending.id)
@@ -1779,7 +1671,6 @@ export class TeamRuntime {
     )
   }
 
-
 }
 
 function mapMembers(
@@ -1839,7 +1730,6 @@ function withReasoningEffort(
   const { reasoningEffort: _current, ...rest } = member
   return reasoningEffort === undefined ? rest : { ...rest, reasoningEffort }
 }
-
 
 async function mapConcurrent<T>(
   values: readonly T[],

@@ -10,7 +10,12 @@ import { subscribeRuntimeEvents, type RuntimeEventDeps } from '../src/runtime/ru
  * that runs after the runtime is gone. One disposer is what makes that
  * impossible, so it is what these tests are about.
  */
-function fakeContext(): { ctx: Context; events: string[]; fired: (event: string, payload: unknown) => void; disposed: string[] } {
+function fakeContext(): {
+  ctx: Context
+  events: string[]
+  fired: (event: string, ...args: unknown[]) => void
+  disposed: string[]
+} {
   const events: string[] = []
   const disposed: string[] = []
   const handlers = new Map<string, (payload: never) => void>()

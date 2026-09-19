@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { Config } from '../config.js'
 import { AssistantDraftStore } from './assistant-builder-drafts.js'
 import { registerAssistantBuilderTools } from './assistant-builder-tools.js'
+import * as assistantBuilderConfig from './assistant-builder-config.js'
 import * as assistantBuilderSetup from './assistant-builder-setup.js'
 import { AgentTeamError } from '../domain/errors.js'
 import type { AgentTeamService } from '../service/agent-team-service.js'
@@ -49,21 +50,14 @@ export const ASSISTANT_BUILDER_PROMPT = `
 保持中文、简洁、主动，但不要替用户猜测会显著影响成本、权限或能力范围的参数。
 `.trim()
 
-interface AssistantBuilderConfiguration {
-  provider: string
-  model: string
-  agentPresetId: string
-  permissionPresetId: string
-}
-
 export class AssistantBuilderRuntime {
   private handle: AgentHandle | undefined
   private starting: Promise<AgentHandle> | undefined
   private reconfiguring: Promise<void> | undefined
   private switching: Promise<void> | undefined
   private activeSessionId: string | undefined
-  private configuration: AssistantBuilderConfiguration | undefined
-  private readonly configurations = new Map<string, AssistantBuilderConfiguration>()
+  private configuration: assistantBuilderConfig.BuilderConfiguration | undefined
+  private readonly configurations = new Map<string, assistantBuilderConfig.BuilderConfiguration>()
   private readonly drafts = new AssistantDraftStore()
   private publishTimer: ReturnType<typeof setTimeout> | undefined
   private readonly disposeStatusListener: () => void
@@ -409,87 +403,22 @@ export class AssistantBuilderRuntime {
       })
   }
 
-  private async resolveConfiguration(sessionId: string): Promise<AssistantBuilderConfiguration> {
-    const selected = this.configurations.get(sessionId)
-    const persisted = selected === undefined
-      ? this.modelPreferences.getConversationModel(sessionId)
-        ?? this.modelPreferences.getLastSelectedModel()
-      : undefined
-    const persistedModel = persisted === undefined
-      ? undefined
-      : await this.resolvePersistedModel(persisted)
-    const requestedProvider = selected?.provider
-      ?? persistedModel?.provider
-      ?? this.config.assistantBuilderProvider.trim()
-    const requestedModel = selected?.model
-      ?? persistedModel?.model
-      ?? this.config.assistantBuilderModel.trim()
-    if (requestedModel.length > 0 && requestedProvider.length === 0) {
-      throw new AgentTeamError('INVALID_REQUEST', 'assistantBuilderModel requires assistantBuilderProvider')
-    }
-    const providers = this.ctx.llm.listProviders()
-    const candidates = requestedProvider.length > 0
-      ? providers.filter(provider => provider.id === requestedProvider)
-      : providers
-    if (candidates.length === 0) {
-      throw new AgentTeamError(
-        'MODEL_REFERENCE_INVALID',
-        requestedProvider.length > 0
-          ? `Unknown Assistant Builder provider '${requestedProvider}'`
-          : 'No model provider is available for the Assistant Builder',
-      )
-    }
 
-    let provider = ''
-    let model = ''
-    for (const candidate of candidates) {
-      const models = await this.ctx.llm.listModels(candidate.id)
-      const selected = requestedModel.length > 0
-        ? models.find(item => item.id === requestedModel)
-        : models[0]
-      if (selected === undefined) continue
-      provider = candidate.id
-      model = selected.id
-      break
-    }
-    if (provider.length === 0 || model.length === 0) {
-      throw new AgentTeamError(
-        'MODEL_REFERENCE_INVALID',
-        requestedModel.length > 0
-          ? `Unknown Assistant Builder model '${requestedProvider}/${requestedModel}'`
-          : 'No catalog model is available for the Assistant Builder',
-      )
-    }
-    await this.ctx.llm.resolveModelInfo(provider, model)
 
-    const agentPresetId = this.config.assistantBuilderAgentPresetId.trim() || this.ctx.agentPresets.defaultId
-    await this.ctx.agentPresets.resolve(agentPresetId)
-    const permissionPresetId = this.config.assistantBuilderPermissionPresetId.trim()
-      || (this.ctx.permissionPresets.names.includes('read-only')
-        ? 'read-only'
-        : this.ctx.permissionPresets.defaultPreset)
-    if (!this.ctx.permissionPresets.names.includes(permissionPresetId)) {
-      throw new AgentTeamError(
-        'PERMISSION_PRESET_INVALID',
-        `Unknown Assistant Builder permission preset '${permissionPresetId}'`,
-      )
+  /** What resolving the builder's configuration needs from this runtime. */
+  private configDeps(): assistantBuilderConfig.BuilderConfigDeps {
+    return {
+      ctx: this.ctx,
+      config: this.config,
+      modelPreferences: this.modelPreferences,
+      configurations: this.configurations,
     }
-    return { provider, model, agentPresetId, permissionPresetId }
   }
 
-  private async resolvePersistedModel(
-    preference: AssistantBuilderModelReference,
-  ): Promise<AssistantBuilderModelReference | undefined> {
-    try {
-      await this.ctx.llm.resolveModelInfo(preference.provider, preference.model)
-      return preference
-    } catch (error) {
-      this.ctx.logger.warn(
-        `agent-team: saved Assistant Builder model '${preference.provider}/${preference.model}' is unavailable; falling back`,
-        error,
-      )
-      return undefined
-    }
+  private async resolveConfiguration(
+    sessionId: string,
+  ): Promise<assistantBuilderConfig.BuilderConfiguration> {
+    return await assistantBuilderConfig.resolveConfiguration(this.configDeps(), sessionId)
   }
 
   private async validateModelReference(provider: string, model: string): Promise<void> {

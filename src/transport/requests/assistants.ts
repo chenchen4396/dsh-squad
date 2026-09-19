@@ -15,7 +15,7 @@ export interface AssistantsRequests {
   'assistant.get': { payload: { id: string }; result: AssistantView }
   'assistant.create': { payload: CreateAssistantInput; result: AssistantView }
   'assistant.update': { payload: { id: string; value: UpdateAssistantInput }; result: AssistantView }
-  'assistant.clone': { payload: { id: string; name?: string }; result: AssistantView }
+  'assistant.clone': { payload: { id: string; name?: string | undefined }; result: AssistantView }
   'assistant.delete': { payload: { id: string }; result: null }
   'assistant.ruleDocuments.list': {
     payload: undefined

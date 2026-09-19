@@ -1,3 +1,4 @@
+import type { ParsedInteractionResponse } from '../payload-schemas.js'
 import type {
   TeamMessage,
 } from '../../domain/types.js'
@@ -15,7 +16,7 @@ import type {
 export interface ConversationsRequests {
   'team.message.list': { payload: { id: string }; result: PageView<TeamMessage> }
   'team.message.send': {
-    payload: { teamId: string; content: string; conversationId: string; targetSlotId?: string }
+    payload: { teamId: string; content: string; conversationId: string; targetSlotId?: string | undefined }
     result: TeamMessage
   }
   'team.workbench.get': {
@@ -55,7 +56,7 @@ export interface ConversationsRequests {
     result: RoomView
   }
   'team.room.send': {
-    payload: { teamId: string; content: string; conversationId: string; mentions?: string[] }
+    payload: { teamId: string; content: string; conversationId: string; mentions?: string[] | undefined }
     result: TeamMessage
   }
   'team.interaction.respond': {
@@ -63,7 +64,7 @@ export interface ConversationsRequests {
       teamId: string
       slotId: string
       interactionId: string
-      response: InteractionResponseInput
+      response: ParsedInteractionResponse
       conversationId: string
     }
     result: { accepted: boolean }

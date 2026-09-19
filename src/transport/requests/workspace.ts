@@ -7,21 +7,21 @@ import type {
 /** Reading and changing the workspace a conversation runs in. */
 export interface WorkspaceRequests {
   'team.workspace.list': {
-    payload: { teamId: string; conversationId?: string; path?: string }
+    payload: { teamId: string; conversationId?: string | undefined; path?: string | undefined }
     result: WorkspaceEntryView[]
   }
   'team.workspace.search': {
-    payload: { teamId: string; conversationId?: string; query?: string; limit?: number }
+    payload: { teamId: string; conversationId?: string | undefined; query?: string | undefined; limit?: number | undefined }
     result: WorkspaceEntryView[]
   }
   'team.workspace.changes': {
-    payload: { teamId: string; conversationId?: string }
+    payload: { teamId: string; conversationId?: string | undefined }
     result: WorkspaceGitStatusView
   }
   'team.workspace.diff': {
     payload: {
       teamId: string
-      conversationId?: string
+      conversationId?: string | undefined
       path: string
       scope: 'staged' | 'unstaged'
       layout: 'unified' | 'split'

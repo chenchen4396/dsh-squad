@@ -44,7 +44,9 @@ describe('dsh-squad transport contracts', () => {
   it('associates Workspace methods with their payload and result types', () => {
     expectTypeOf<AgentTeamPayload<'team.workspace.diff'>>().toEqualTypeOf<{
       teamId: string
-      conversationId?: string
+      // Written the way the request schema infers it, which is what makes the
+      // two descriptions of this request agree.
+      conversationId?: string | undefined
       path: string
       scope: 'staged' | 'unstaged'
       layout: 'unified' | 'split'
@@ -77,5 +79,43 @@ describe('interactionResponseOf', () => {
     })
     // The key must be absent, not present as undefined: this shape is stored.
     expect(Object.keys((response as { answers: object[] }).answers[0]!)).toEqual(['id', 'selected'])
+  })
+})
+
+describe('the request schema and the declared payload agree', () => {
+  it('holds for every method but the ones the service validates itself', async () => {
+    const { assertContractAgreement } = await import('../src/transport/contract-agreement.js')
+    // The real check is the type of this function's parameter, which the
+    // typechecker evaluates: if a method's schema output stopped fitting the
+    // payload its request declares, the parameter becomes that method's name and
+    // the body stops compiling — naming it.
+    expect(typeof assertContractAgreement).toBe('function')
+  })
+
+  it('keeps the list of exceptions short and named', async () => {
+    type ZodLike = { _zod?: { def?: { type?: string } }; shape?: Record<string, ZodLike> }
+    const unknownIn = (schema: ZodLike): string[] => {
+      if (schema._zod?.def?.type === 'unknown') return [''] // the whole payload
+      return Object.entries(schema.shape ?? {})
+        .filter(([, field]) => field._zod?.def?.type === 'unknown')
+        .map(([field]) => field)
+    }
+    const schemas = (await import('../src/transport/payload-schemas.js')).PAYLOAD_SCHEMAS
+    const unknownFields = Object.entries(schemas).flatMap(([method, schema]) =>
+      unknownIn(schema as ZodLike)
+        .map(field => (field === '' ? method : `${method}.${field}`)))
+    // A field the schema does not describe has to be one the service validates.
+    // This pins how many there are: a new one is a decision, not a drift.
+    expect(unknownFields.sort()).toEqual([
+      // Two whole payloads the service parses itself, so a bad one names the
+      // field rather than reporting the whole body as invalid.
+      'assistant.create',
+      // Three fields whose inner shape the service validates, for the same
+      // reason.
+      'assistant.update.value',
+      'bundle.import.bundle',
+      'team.addMember.value',
+      'team.createDraft',
+    ])
   })
 })

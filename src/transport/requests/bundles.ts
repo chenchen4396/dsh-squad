@@ -3,7 +3,7 @@ import type { BundleImportMode, BundleImportSummary, SquadBundle } from '../../d
 /** Moving configuration in and out as a file. */
 export interface BundlesRequests {
   'bundle.export': {
-    payload: { teamIds?: string[] }
+    payload: { teamIds?: string[] | undefined }
     result: SquadBundle
   }
   'bundle.import': {

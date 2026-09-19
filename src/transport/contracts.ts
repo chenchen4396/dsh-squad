@@ -434,6 +434,7 @@ export interface WorkspaceUploadView {
 }
 
 import type { AgentTeamRequestMap as RequestMap } from './requests/index.js'
+import type { ParsedInteractionResponse } from './payload-schemas.js'
 
 export type { AgentTeamRequestMap } from './requests/index.js'
 

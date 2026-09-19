@@ -1,3 +1,4 @@
+import type { ParsedInteractionResponse } from '../payload-schemas.js'
 import type {
   AssistantBuilderConversationListView,
   AssistantBuilderConversationView,
@@ -30,7 +31,7 @@ export interface AssistantBuilderRequests {
     payload: {
       sessionId: string
       interactionId: string
-      response: InteractionResponseInput
+      response: ParsedInteractionResponse
     }
     result: { accepted: boolean }
   }

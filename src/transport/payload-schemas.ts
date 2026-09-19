@@ -2,10 +2,11 @@ import { z } from 'zod'
 import type { InteractionResponseInput } from './contracts.js'
 
 /**
- * What the request schema proves about a reader's answer, which is slightly
- * looser than the view type: an absent `custom` reads as `undefined`.
+ * A reader's answer as it arrives on the wire, which is what the schema proves:
+ * slightly looser than the view type, because an absent `custom` reads as
+ * `undefined` rather than being missing.
  */
-type ParsedInteractionResponse =
+export type ParsedInteractionResponse =
   | { kind: 'approval'; outcome: 'allowed-once' | 'rejected' }
   | {
     kind: 'question'

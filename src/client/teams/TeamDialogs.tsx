@@ -100,23 +100,14 @@ export function AddTeamMemberDialog({
         </div>
         {error && <div role="alert" className={css.inlineError}>{error}</div>}
       </AnimatedModal>
-      <AnimatedModal
+      <AssistantManagementDialog
         open={configuringAssistants}
-        onClose={() => { setConfiguringAssistants(false) }}
         title="助手配置"
-        closeLabel="关闭"
-        description="创建和维护可在不同团队间复用的助手模板。"
-        className={css.assistantManagementDialog ?? ''}
-        contentClassName={css.assistantManagementDialogContent ?? ''}
-      >
-        <div className={css.assistantManagementBody}>
-          <AssistantPanel
-            catalog={catalog}
-            assistants={assistants}
-            onChanged={onChanged}
-          />
-        </div>
-      </AnimatedModal>
+        onClose={() => { setConfiguringAssistants(false) }}
+        catalog={catalog}
+        assistants={assistants}
+        onChanged={async () => { await onChanged() }}
+      />
     </>
   )
 }
@@ -233,3 +224,42 @@ export function CloneTeamDialog({
  * The team list: one row per team with its leader, roster and last activity.
  * A row is the way into that team's page.
  */
+
+/**
+ * The assistant templates, managed without leaving the team view.
+ *
+ * Reached from two places — the panel's 「管理助手」 and the member picker's
+ * 「助手配置」 — and written out at both, down to the description and the dialog
+ * class names. Only the title says which door the reader came through.
+ */
+export function AssistantManagementDialog({
+  open,
+  title,
+  onClose,
+  catalog,
+  assistants,
+  onChanged,
+}: {
+  open: boolean
+  title: string
+  onClose: () => void
+  catalog: CatalogView | undefined
+  assistants: AssistantView[]
+  onChanged: () => Promise<void>
+}): JSX.Element {
+  return (
+    <AnimatedModal
+      open={open}
+      onClose={onClose}
+      title={title}
+      closeLabel="关闭"
+      description="创建和维护可在不同团队间复用的助手模板。"
+      className={css.assistantManagementDialog ?? ''}
+      contentClassName={css.assistantManagementDialogContent ?? ''}
+    >
+      <div className={css.assistantManagementBody}>
+        <AssistantPanel catalog={catalog} assistants={assistants} onChanged={onChanged} />
+      </div>
+    </AnimatedModal>
+  )
+}

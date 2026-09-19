@@ -161,3 +161,43 @@ describe('the member column', () => {
     expect(typeof openSessionFor(view, member, sessions as never)).toBe('function')
   })
 })
+
+describe('the assistant management dialog', () => {
+  it('is one dialog reachable from two places, and says which', async () => {
+    const { AssistantManagementDialog } = await import('../src/client/teams/TeamDialogs.js')
+    const fromPanel = renderToStaticMarkup(createElement(AssistantManagementDialog, {
+      open: true,
+      title: '管理助手',
+      onClose: () => {},
+      catalog: undefined,
+      assistants: [],
+      onChanged: async () => {},
+    }))
+    const fromTeam = renderToStaticMarkup(createElement(AssistantManagementDialog, {
+      open: true,
+      title: '助手配置',
+      onClose: () => {},
+      catalog: undefined,
+      assistants: [],
+      onChanged: async () => {},
+    }))
+    // The same body behind both doors; only the title says which one.
+    const body = (html: string): string => html.replace(/title="[^"]*"/g, '')
+    expect(body(fromPanel)).toBe(body(fromTeam))
+    expect(fromPanel).toContain('管理助手')
+    expect(fromTeam).toContain('助手配置')
+  })
+
+  it('renders nothing while it is closed', async () => {
+    const { AssistantManagementDialog } = await import('../src/client/teams/TeamDialogs.js')
+    const html = renderToStaticMarkup(createElement(AssistantManagementDialog, {
+      open: false,
+      title: '管理助手',
+      onClose: () => {},
+      catalog: undefined,
+      assistants: [],
+      onChanged: async () => {},
+    }))
+    expect(html).toBe('')
+  })
+})

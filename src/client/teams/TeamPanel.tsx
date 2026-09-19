@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AssistantView, CatalogView, TeamView } from '../../transport/contracts.js'
-import { AssistantPanel } from '../assistants/AssistantPanel.js'
 import css from '../AgentTeam.module.css'
 import { AnimatedModal, Empty } from '../shared.js'
 import { openTeams } from '../store.js'
 import { TeamDetail } from './TeamDetail.js'
 import { TeamForm } from './TeamForm.js'
 import { TeamList } from './TeamList.js'
-import { AddTeamMemberDialog, CloneTeamDialog } from './TeamDialogs.js'
+import { AddTeamMemberDialog, AssistantManagementDialog, CloneTeamDialog } from './TeamDialogs.js'
 
 /**
  * Global team management: the team list, the team detail page, and the
@@ -66,23 +65,14 @@ export function TeamPanel({
           onChanged={onChanged}
           onBack={openTeams}
         />}
-      <AnimatedModal
+      <AssistantManagementDialog
         open={managingAssistants}
-        onClose={() => { setManagingAssistants(false) }}
         title="管理助手"
-        closeLabel="关闭"
-        description="创建和维护可在不同团队间复用的助手模板。"
-        className={css.assistantManagementDialog ?? ''}
-        contentClassName={css.assistantManagementDialogContent ?? ''}
-      >
-        <div className={css.assistantManagementBody}>
-          <AssistantPanel
-            catalog={catalog}
-            assistants={assistants}
-            onChanged={onChanged}
-          />
-        </div>
-      </AnimatedModal>
+        onClose={() => { setManagingAssistants(false) }}
+        catalog={catalog}
+        assistants={assistants}
+        onChanged={onChanged}
+      />
       <AnimatedModal
         open={creating}
         onClose={() => { setCreating(false) }}

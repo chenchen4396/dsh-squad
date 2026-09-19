@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { projectContextUsage, projectConversation, projectRoom } from '../src/runtime/conversation-projector.js'
+import { projectContextUsage, projectConversation } from '../src/runtime/conversation-projector.js'
+import { projectRoom } from '../src/runtime/room-projector.js'
 
 describe('projectConversation', () => {
   it('projects user messages and final assistant text with reasoning', () => {

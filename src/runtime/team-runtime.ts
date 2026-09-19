@@ -44,9 +44,9 @@ import {
   CONVERSATION_PAGE_SIZE,
   projectContextUsage,
   projectConversation,
-  projectRoom,
   textOfContent,
 } from './conversation-projector.js'
+import { projectRoom } from './room-projector.js'
 import { readStoredEvents } from './session-events.js'
 import { registerScopedSkillProvider } from './scoped-skills.js'
 import { TeamCommandHandler } from './team-command-handler.js'

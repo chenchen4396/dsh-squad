@@ -14,6 +14,7 @@ import { isModelInvocable, isUserInvocable } from '@deepseek-ai/dsh-skill'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { Config } from '../config.js'
 import { AgentTeamError } from '../domain/errors.js'
+import { LiveStreamBuffer } from './live-stream-buffer.js'
 import { MemberRegistry } from './member-registry.js'
 import { OperationQueue } from './operation-queue.js'
 import { PublishCoalescer } from './publish-coalescer.js'
@@ -106,7 +107,7 @@ export class TeamRuntime {
   private readonly disposeUserMessageListener: () => void
   private readonly conversationPublishes = new PublishCoalescer()
   /** Transient live assistant output per member session, keyed by session id. */
-  private readonly liveStreams = new Map<string, { text: string; reasoning: string }>()
+  private readonly liveStreams = new LiveStreamBuffer()
   /** Member requests already handed to the Leader, so each is announced once. */
   private readonly handedRequests = new Set<string>()
   /**
@@ -200,18 +201,22 @@ export class TeamRuntime {
     this.disposeStreamListener = ctx.on('agent/assistant-stream', ({ agent, frame }) => {
       const sessionId = String(agent.id)
       if (!this.members.has(sessionId)) return
+      // What each frame means is this listener's business; holding the
+      // in-progress text is the buffer's.
       if (frame.type === 'start') {
-        this.liveStreams.set(sessionId, { text: '', reasoning: '' })
+        this.liveStreams.begin(sessionId)
       } else if (frame.type === 'chunk') {
-        const current = this.liveStreams.get(sessionId) ?? { text: '', reasoning: '' }
         const chunk = frame.chunk
-        if (chunk.type === 'text-delta') current.text += chunk.text
-        if (chunk.type === 'reasoning-delta') current.reasoning += chunk.text
-        if (chunk.type === 'block-end' && chunk.block.type === 'text') current.text = chunk.block.text
-        if (chunk.type === 'block-end' && chunk.block.type === 'reasoning') current.reasoning = chunk.block.text
-        this.liveStreams.set(sessionId, current)
+        if (chunk.type === 'text-delta') this.liveStreams.append(sessionId, { text: chunk.text })
+        if (chunk.type === 'reasoning-delta') this.liveStreams.append(sessionId, { reasoning: chunk.text })
+        if (chunk.type === 'block-end' && chunk.block.type === 'text') {
+          this.liveStreams.replace(sessionId, { text: chunk.block.text })
+        }
+        if (chunk.type === 'block-end' && chunk.block.type === 'reasoning') {
+          this.liveStreams.replace(sessionId, { reasoning: chunk.block.text })
+        }
       } else {
-        this.liveStreams.delete(sessionId)
+        this.liveStreams.end(sessionId)
       }
     })
   }
@@ -758,14 +763,14 @@ export class TeamRuntime {
       // earlier bug appended there read as the user's own messages.
       ...(member.id === team.leaderSlotId ? { hideRelayEchoes: true } : {}),
     })
-    const live = sessionId === undefined ? undefined : this.liveStreams.get(sessionId)
+    const live = sessionId === undefined ? undefined : this.liveStreams.nonEmpty(sessionId)
     return {
       slotId: member.id,
       conversationId: conversation.id,
       ...(sessionId === undefined ? {} : { sessionId }),
       status,
       pendingInteractions: sessionId === undefined ? [] : this.interactions.list(sessionId),
-      ...(live === undefined || (live.text.length === 0 && live.reasoning.length === 0)
+      ...(live === undefined
         ? projected
         : {
             throughSeq: projected.throughSeq,

@@ -25,6 +25,7 @@ import {
   type SkillCatalogSnapshot,
 } from './catalog-views.js'
 import * as catalogViews from './catalog-views.js'
+import * as conversations from './conversations-service.js'
 import * as assistants from './assistants-service.js'
 import * as teams from './teams-service.js'
 import {
@@ -91,9 +92,6 @@ declare module '@deepseek-ai/cordis' {
  * `session-title` defaults so a team conversation gets exactly the title a DSH
  * Session would get from the same first message.
  */
-const AUTO_TITLE_WORDS = 5
-const AUTO_TITLE_BYTES = 40
-
 /**
  * How long one complete catalog read is reused before it refreshes.
  *
@@ -102,14 +100,6 @@ const AUTO_TITLE_BYTES = 40
  * UI changes that fast — a provider list, a preset list, the Workspace list —
  * and a view opening must not wait on it.
  */
-/** What the sidebar shows about a conversation beyond its stored record. */
-interface ConversationDisplay {
-  /** Earliest user message text; absent when nobody has spoken yet. */
-  firstUserText?: string
-  /** Latest activity in epoch ms. */
-  lastActivity: number
-}
-
 export interface AgentTeamChange {
   cursor: number
   entityType: 'assistant' | 'assistant-builder' | 'team' | 'operation' | 'conversation' | 'workspace' | 'catalog' | 'rule-document'
@@ -236,8 +226,6 @@ export class AgentTeamService extends Service {
     return { ctx: this.ctx }
   }
 
-
-
   /**
    * Every imported rule document, newest last.
    *
@@ -277,7 +265,6 @@ export class AgentTeamService extends Service {
   deleteRuleDocument(id: string): Promise<void> {
     return deleteRuleDocument(this.ruleDocumentDeps(), id)
   }
-
 
   /**
    * The assistant a member runs as, resolved live.
@@ -545,6 +532,101 @@ export class AgentTeamService extends Service {
   }
 
   // ── Sessions, conversations and the room ────────────────────────────────
+  // These belong to `conversations-service`; the service is where callers
+  // reach them.
+
+  getConversation(teamId: string, conversationId: string): TeamConversation {
+    return conversations.getConversation(this.conversationDeps(), teamId, conversationId)
+  }
+
+  findConversationBySession(sessionId: string): TeamConversation | undefined {
+    return conversations.findConversationBySession(this.conversationDeps(), sessionId)
+  }
+
+  listConversations(teamId: string): Page<TeamConversation> {
+    return conversations.listConversations(this.conversationDeps(), teamId)
+  }
+
+  async createConversationRecord(
+    teamId: string,
+    input: {
+      sessionId: string
+      workspaceId: string
+      workspacePath: string
+      title?: string
+    },
+  ): Promise<TeamConversation> {
+    return await conversations.createConversationRecord(this.conversationDeps(), teamId, input)
+  }
+
+  async deleteConversationRecord(teamId: string, conversationId: string): Promise<void> {
+    await conversations.deleteConversationRecord(this.conversationDeps(), teamId, conversationId)
+  }
+
+  async assignMemberSessions(
+    teamId: string,
+    conversationId: string,
+    additions: Record<string, string>,
+  ): Promise<TeamConversation> {
+    return await conversations.assignMemberSessions(this.conversationDeps(), teamId, conversationId, additions)
+  }
+
+  async forgetMemberSessions(teamId: string, slotId: string): Promise<void> {
+    await conversations.forgetMemberSessions(this.conversationDeps(), teamId, slotId)
+  }
+
+  async bindSession(sessionId: string, teamId: string): Promise<TeamConversation> {
+    return await conversations.bindSession(this.conversationDeps(), sessionId, teamId)
+  }
+
+  async unbindSession(sessionId: string): Promise<void> {
+    await conversations.unbindSession(this.conversationDeps(), sessionId)
+  }
+
+  async setSessionDelegation(sessionId: string, delegate: boolean): Promise<TeamConversation> {
+    return await conversations.setSessionDelegation(this.conversationDeps(), sessionId, delegate)
+  }
+
+  publishConversation(
+    teamId: string,
+    revision: number,
+    conversation?: MemberConversationView,
+  ): void {
+    conversations.publishConversation(this.conversationDeps(), teamId, revision, conversation)
+  }
+
+  listMessages(teamId: string): Page<TeamMessage> {
+    return conversations.listMessages(this.conversationDeps(), teamId)
+  }
+
+  async putRuntimeMessage(message: TeamMessage): Promise<void> {
+    await conversations.putRuntimeMessage(this.conversationDeps(), message)
+  }
+
+  /** What conversation records need from this service. */
+  private conversationDeps(): conversations.ConversationDeps {
+    return {
+      store: this.store,
+      publish: (entityType, entityId, revision, kind, conversation) => {
+        this.publish(entityType, entityId, revision, kind, conversation)
+      },
+      requireWorkspace: workspaceId => this.requireWorkspace(workspaceId),
+      requireRuntime: () => this.requireRuntime(),
+      now: () => new Date().toISOString(),
+    }
+  }
+
+  private conversationDisplays(teamId: string): Map<string, conversations.ConversationDisplay> {
+    return conversations.conversationDisplays(this.conversationDeps(), teamId)
+  }
+
+  private displayConversation(
+    conversation: TeamConversation,
+    displays: Map<string, conversations.ConversationDisplay>,
+  ): TeamConversation {
+    return conversations.displayConversation(this.conversationDeps(), conversation, displays)
+  }
+
   async getWorkbench(teamId: string, conversationId: string): Promise<TeamWorkbenchView> {
     const view = await this.requireRuntime().getWorkbench(teamId, conversationId)
     const displays = this.conversationDisplays(teamId)
@@ -562,142 +644,21 @@ export class AgentTeamService extends Service {
       .getOlderMemberConversation(teamId, conversationId, slotId, beforeSeq)
   }
 
-  listConversations(teamId: string): Page<TeamConversation> {
-    requireTeam(this.store, teamId)
-    const displays = this.conversationDisplays(teamId)
-    const items = this.store.listConversations(teamId)
-      .map(conversation => this.displayConversation(conversation, displays))
-    return { items, total: items.length }
-  }
+  
 
-  /**
-   * Sidebar facts of a team's conversations, resolved in one pass: the title
-   * rule is DSH's own first-prompt fallback over the earliest user message, and
-   * the row's right-hand stamp is the conversation's latest activity.
-   */
-  private conversationDisplays(teamId: string): Map<string, ConversationDisplay> {
-    const displays = new Map<string, ConversationDisplay>()
-    for (const message of this.store.listMessages(teamId)) {
-      if (message.conversationId === undefined) continue
-      const at = Date.parse(message.createdAt)
-      const current = displays.get(message.conversationId)
-      const firstUserText = message.sender.kind === 'user' && message.content.trim().length > 0
-        ? current?.firstUserText ?? message.content
-        : current?.firstUserText
-      displays.set(message.conversationId, {
-        ...(firstUserText === undefined ? {} : { firstUserText }),
-        lastActivity: Math.max(current?.lastActivity ?? 0, at),
-      })
-    }
-    return displays
-  }
+  
 
-  /**
-   * Display copy of one conversation. An auto title is derived, never stored:
-   * the record keeps its placeholder so a rename stays the only pinned title.
-   * An underivable title stays empty, which the UI labels like a new Session.
-   */
-  private displayConversation(
-    conversation: TeamConversation,
-    displays: Map<string, ConversationDisplay>,
-  ): TeamConversation {
-    if (conversation.titleSource === 'user') return conversation
-    const display = displays.get(conversation.id)
-    if (display === undefined) return { ...conversation, title: '' }
-    return {
-      ...conversation,
-      title: display.firstUserText === undefined
-        ? ''
-        : fallbackSessionTitle(display.firstUserText, AUTO_TITLE_WORDS, AUTO_TITLE_BYTES),
-      updatedAt: new Date(display.lastActivity).toISOString(),
-    }
-  }
+  
 
-  getConversation(teamId: string, conversationId: string): TeamConversation {
-    const conversation = this.store.getConversation(conversationId)
-    if (conversation === undefined || conversation.teamId !== teamId) {
-      throw new AgentTeamError('CONVERSATION_NOT_FOUND', `Unknown conversation '${conversationId}'`)
-    }
-    return conversation
-  }
+  
 
-  /**
-   * The conversation bound to one Harness Session, if any.
-   *
-   * A Session enables at most one team, so the first match is the only match;
-   * legacy conversations carry no Session and are never returned.
-   */
-  findConversationBySession(sessionId: string): TeamConversation | undefined {
-    for (const team of this.store.listTeams()) {
-      const found = this.store.listConversations(team.id).find(item => item.sessionId === sessionId)
-      if (found !== undefined) return found
-    }
-    return undefined
-  }
+  
 
-  /** Enable a team in one Harness Session; the runtime binds and activates it. */
-  async bindSession(sessionId: string, teamId: string): Promise<TeamConversation> {
-    return this.requireRuntime().bindSession(sessionId, teamId)
-  }
+  
 
-  /** Disable whichever team is enabled in one Harness Session. */
-  async unbindSession(sessionId: string): Promise<void> {
-    return this.requireRuntime().unbindSession(sessionId)
-  }
+  
 
-  /**
-   * Turn «替我审批» on or off for one Session's binding: with it on, the Leader
-   * answers every interaction of that conversation on the reader's behalf.
-   */
-  async setSessionDelegation(sessionId: string, delegate: boolean): Promise<TeamConversation> {
-    return this.requireRuntime().setSessionDelegation(sessionId, delegate)
-  }
-
-  /**
-   * Create the conversation record for a Harness Session without activating
-   * anything. Used by the runtime (which activates afterwards).
-   *
-   * The workspace is read off the Session, because a DSH Session's working
-   * directory is fixed when it is created and every member shares it.
-   */
-  async createConversationRecord(
-    teamId: string,
-    input: {
-      sessionId: string
-      workspaceId: string
-      workspacePath: string
-      title?: string
-    },
-  ): Promise<TeamConversation> {
-    requireTeam(this.store, teamId)
-    const workspace = await this.requireWorkspace(input.workspaceId)
-    const now = new Date().toISOString()
-    const conversation: TeamConversation = {
-      schemaVersion: 1,
-      id: randomUUID(),
-      teamId,
-      sessionId: input.sessionId,
-      // Placeholder only: the Session's own title is what the UI shows.
-      title: input.title?.trim() || `会话 ${this.store.listConversations(teamId).length + 1}`,
-      titleSource: input.title === undefined ? 'auto' : 'user',
-      state: 'active',
-      workspaceId: workspace.id,
-      workspacePath: workspace.path,
-      memberSessions: {},
-      createdAt: now,
-      updatedAt: now,
-      revision: 1,
-    }
-    await this.store.putConversation(conversation)
-    return conversation
-  }
-
-  /** Drop one conversation record, which un-enables its team in that Session. */
-  async deleteConversationRecord(teamId: string, conversationId: string): Promise<void> {
-    const conversation = this.getConversation(teamId, conversationId)
-    await this.store.deleteConversation(conversation.id)
-    this.publish('conversation', teamId, conversation.revision, 'team.conversation_removed')
-  }
+  
 
   /** Change one conversation record, bumping its revision and publishing it. */
   async updateConversationRecord(
@@ -722,37 +683,9 @@ export class AgentTeamService extends Service {
     return { id: String(workspace.id), path: workspace.path }
   }
 
-  /** Record the Session ids a conversation assigned to its members. */
-  async assignMemberSessions(
-    teamId: string,
-    conversationId: string,
-    additions: Record<string, string>,
-  ): Promise<TeamConversation> {
-    const conversation = this.getConversation(teamId, conversationId)
-    const next: TeamConversation = {
-      ...conversation,
-      memberSessions: { ...conversation.memberSessions, ...additions },
-      updatedAt: new Date().toISOString(),
-      revision: conversation.revision + 1,
-    }
-    await this.store.putConversation(next)
-    return next
-  }
+  
 
-  /** Drop one member's Session assignment from every conversation of a team. */
-  async forgetMemberSessions(teamId: string, slotId: string): Promise<void> {
-    for (const conversation of this.store.listConversations(teamId)) {
-      if (conversation.memberSessions[slotId] === undefined) continue
-      const memberSessions = { ...conversation.memberSessions }
-      delete memberSessions[slotId]
-      await this.store.putConversation({
-        ...conversation,
-        memberSessions,
-        updatedAt: new Date().toISOString(),
-        revision: conversation.revision + 1,
-      })
-    }
-  }
+  
 
   getRoom(teamId: string, conversationId: string, beforeTime?: number): Promise<RoomView> {
     requireTeam(this.store, teamId)
@@ -786,10 +719,6 @@ export class AgentTeamService extends Service {
     }
     await this.requireRuntime()
       .respondToInteraction(teamId, slotId, interactionId, response, conversationId)
-  }
-
-  publishConversation(teamId: string, revision: number, conversation?: MemberConversationView): void {
-    this.publish('conversation', teamId, revision, 'member.conversation', conversation)
   }
 
   publishAssistantBuilderConversation(conversation: AssistantBuilderConversationView): void {
@@ -843,18 +772,6 @@ export class AgentTeamService extends Service {
     data: Uint8Array,
   ): Promise<WorkspaceUploadView> {
     return this.workspace.upload(teamId, conversationId, rawName, data)
-  }
-
-  listMessages(teamId: string): Page<TeamMessage> {
-    requireTeam(this.store, teamId)
-    const items = this.store.listMessages(teamId)
-    return { items, total: items.length }
-  }
-
-  async putRuntimeMessage(message: TeamMessage): Promise<void> {
-    await this.store.putMessage(message)
-    const team = requireTeam(this.store, message.teamId)
-    this.publish('team', team.id, team.revision, 'team.message')
   }
 
   /**

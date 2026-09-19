@@ -21,7 +21,7 @@ import css from '../AgentTeam.module.css'
 import { shouldSubmitComposer } from '../keyboard.js'
 import { markdownLabels } from '../native-locale.js'
 import { AnimatedModal } from '../shared.js'
-import { ConversationNodeView } from '../workbench/ConversationColumn.js'
+import { ConversationNodeView } from '../workbench/ConversationNodeView.js'
 import { PendingInteractionCard } from '../workbench/PendingInteractionCard.js'
 import conversationCss from '../workbench/ConversationColumn.module.css'
 

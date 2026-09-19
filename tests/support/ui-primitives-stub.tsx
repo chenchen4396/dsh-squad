@@ -34,7 +34,18 @@ export const Menu = element('div')
 export const Modal = element('div')
 export const Tooltip = element('span')
 export const Tag = element('span')
-export const DisclosureRow = element('div')
+/**
+ * Renders the parts the real component shows: the title, and the content it
+ * keeps visible while collapsed. Dropping them would make a test unable to see
+ * what identifies a collapsed row.
+ */
+export const DisclosureRow = ({
+  title,
+  icon,
+  collapsedContent,
+  children,
+}: Props & { title?: ReactNode; icon?: ReactNode; collapsedContent?: ReactNode }) =>
+  createElement('div', null, icon ?? null, title ?? null, collapsedContent ?? null, children ?? null)
 export const MarkdownText = ({ text }: { text?: string }) =>
   createElement('div', { 'data-markdown': text ?? '' }, text ?? '')
 export const StateDot = ({ state }: { state?: string }) =>

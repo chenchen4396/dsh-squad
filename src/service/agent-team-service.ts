@@ -9,6 +9,13 @@ import { exportConfigured, importInto } from './bundle-service.js'
 import { CatalogCache } from './catalog-cache.js'
 import { AgentTeamError } from '../domain/errors.js'
 import {
+  assertRevision,
+  assertTeamMutable,
+  createMemberSlot,
+  requireAssistant,
+  requireTeam,
+} from './store-guards.js'
+import {
   deleteRuleDocument,
   getRuleDocument,
   importRuleDocument,
@@ -1328,36 +1335,6 @@ export class AgentTeamService extends Service {
   }
 }
 
-function requireAssistant(store: AgentTeamStore, id: string): AssistantTemplate {
-  const assistant = store.getAssistant(id)
-  if (assistant === undefined) {
-    throw new AgentTeamError('ASSISTANT_NOT_FOUND', `Unknown assistant '${id}'`)
-  }
-  return assistant
-}
-
-function requireTeam(store: AgentTeamStore, id: string): TeamAggregate {
-  const team = store.getTeam(id)
-  if (team === undefined) throw new AgentTeamError('TEAM_NOT_FOUND', `Unknown team '${id}'`)
-  return team
-}
-
-function assertRevision(entity: string, actual: number, expected?: number): void {
-  if (expected !== undefined && expected !== actual) {
-    throw new AgentTeamError(
-      entity === 'assistant' ? 'ASSISTANT_REVISION_CONFLICT' : 'TEAM_REVISION_CONFLICT',
-      `${entity} revision conflict: expected ${expected}, current ${actual}`,
-      { expected, actual },
-    )
-  }
-}
-
-function assertTeamMutable(team: TeamAggregate): void {
-  if (team.state === 'deleting' || team.state === 'delete_blocked') {
-    throw new AgentTeamError('TEAM_DELETING', `Team '${team.id}' is deleting`)
-  }
-}
-
 /** Replace every member of one team through a pure mapper. */
 function mapTeamMembers(
   team: TeamAggregate,
@@ -1414,28 +1391,6 @@ function unique(values: readonly string[]): string[] {
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
-}
-
-function createMemberSlot(
-  assistant: AssistantTemplate,
-  displayName: string,
-  role: 'leader' | 'member',
-  now: string,
-  desiredState: 'online' | 'offline',
-): TeamMemberSlot {
-  const slotId = randomUUID()
-  return {
-    id: slotId,
-    assistantId: assistant.id,
-    displayName,
-    role,
-    permissionPresetId: assistant.permissionPresetId,
-    ...(assistant.reasoningEffort === undefined ? {} : { reasoningEffort: assistant.reasoningEffort }),
-    ruleAllowlist: [],
-    desiredState,
-    lastRuntimeState: desiredState === 'online' ? 'starting' : 'offline',
-    joinedAt: now,
-  }
 }
 
 /**
